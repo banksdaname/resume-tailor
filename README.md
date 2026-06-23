@@ -56,6 +56,37 @@ The script needs a URL it can POST to that forwards requests to Anthropic's API 
 
 That's it — the script now has a working path to Claude without your API key ever touching client-side code.
 
+## Setting up usage logging (optional)
+
+The script can log call metadata — model, token usage, success/failure, and similar diagnostics — to a Cloudflare D1 database. This is **optional**; without it, the script works exactly the same, just without a persistent log. Only metadata is logged, never résumé content or job description text.
+
+1. In your Cloudflare dashboard, go to **Workers & Pages** → **D1** → **Create database**. Name it `resume_tailor_logdb`.
+2. Open the database's **Console** tab and run:
+   ```sql
+   CREATE TABLE runs (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     created_at TEXT NOT NULL,
+     call_type TEXT NOT NULL,
+     model TEXT,
+     template TEXT,
+     stop_reason TEXT,
+     input_tokens INTEGER,
+     output_tokens INTEGER,
+     max_tokens_requested INTEGER,
+     request_id TEXT,
+     parse_ok INTEGER,
+     error_message TEXT,
+     job_title TEXT,
+     company TEXT
+   );
+   ```
+3. Go to your Worker's **Settings → Bindings → Add binding → D1 database**. Set the variable name to `DB` and select `resume_tailor_logdb`.
+4. Deploy. The Worker's existing code (from this repo) already includes the logging logic — no further setup needed.
+
+Logging failures never block the actual proxy response — if the binding isn't set up, or D1 is briefly unavailable, the script still works normally, it just won't have a log entry for that call.
+
+`job_title` and `company` columns exist in the schema but are intentionally left empty by the current code, since populating them would mean logging which job you're applying to. See the comment in `cloudflare-worker-proxy.js` if you want to enable that yourself.
+
 ## Setting up your knowledge base
 
 In the Résumé Tailor panel, under **Knowledge base**, fill in as many of these as you have:
@@ -88,6 +119,8 @@ A live preview thumbnail below the dropdown updates as you change the selection,
 6. **Export PDF** opens a new tab in your chosen style and triggers your browser's print dialog — choose **Save as PDF**, and make sure **Background graphics** is checked under Options, or the sidebar's background color won't appear in the saved PDF. The suggested filename follows the pattern `FirstName_LastName_JobTitle_Resume`, using the job title from the posting when it can be detected, or your current résumé title otherwise.
 7. **Copy HTML** copies a link you can paste directly into a new tab's address bar, useful as a fallback if a popup blocker stops Export from opening a new tab.
 8. **ATS · copy** switches to the plain-text version for pasting into application portals.
+
+A running cost estimate for the current session is shown discreetly in the panel header, next to the version number — hover over it for a breakdown of input/output tokens on the most recent call. This is an estimate based on Anthropic's published rates, not a billing-accurate figure.
 
 ## Known limitations
 

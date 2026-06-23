@@ -156,8 +156,9 @@
   var hdTitle = mk('b'); hdTitle.textContent = 'R\u00E9sum\u00E9 Tailor';
   var hdVer = mk('span'); hdVer.style.cssText = 'font-size:10px;color:#9aa0ab;font-weight:400'; hdVer.textContent = 'v' + SCRIPT_VERSION;
   hdInner.appendChild(hdTitle); hdInner.appendChild(hdVer);
+  var hdCost = mk('span', { id: 'rt-hdCost' }); hdCost.style.cssText = 'margin-left:8px;font-size:10.5px;color:#9aa0ab;white-space:nowrap';
   var closeBtn = mk('button', { cls: 'rt-x', id: 'rt-close' }); closeBtn.textContent = '\u00D7';
-  var hd = ap(mk('div', { cls: 'rt-hd' }), hdLogo, hdInner, closeBtn);
+  var hd = ap(mk('div', { cls: 'rt-hd' }), hdLogo, hdInner, hdCost, closeBtn);
 
   // Settings card
   var proxyInp = mkInp('text', 'rt-proxy', 'https://name.account.workers.dev');
@@ -201,12 +202,11 @@
 
   // JD card
   var grabBtn = mkBtn('ghost', 'rt-grab', 'Grab from this page'); grabBtn.style.cssText = 'padding:7px 12px;font-size:12.5px';
-  var grabSelBtn = mkBtn('ghost', 'rt-grabSel', 'Use selected text'); grabSelBtn.style.cssText = 'padding:7px 12px;font-size:12.5px';
   var analyzeBtn = mkBtn('primary', 'rt-analyze', 'Tailor my r\u00E9sum\u00E9');
   var jdCard = mkCard(
     ap(mk('h2'), document.createTextNode('\uD83C\uDFAF Step 1 \u00B7 Job description')),
     ap(mk('p', { cls: 'desc' }), document.createTextNode('Grab it off this page, or paste it in.')),
-    mkRow(grabBtn, grabSelBtn),
+    mkRow(grabBtn),
     mkTa('rt-jd', '6', 'Paste the job description\u2026'),
     ap(mk('div', { cls: 'row' }), analyzeBtn),
     mk('div', { id: 'rt-analyzeErr' })
@@ -578,26 +578,49 @@
     text = text.slice(0, end).split('\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n').trim();
     return text.slice(0, 8000);
   }
+
+  // window.getSelection() at click-time is unreliable: clicking the Grab
+  // button itself collapses whatever text was selected on the page before
+  // the click handler ever runs. Instead, track the last non-empty
+  // selection continuously, ignoring selections made inside our own panel
+  // (e.g. highlighting text in the JD textarea shouldn't count). If the
+  // user had manually selected the job description before clicking Grab,
+  // that's a precise, deliberate signal — prefer it over the heuristic.
+  var lastPageSelection = '';
+  document.addEventListener('selectionchange', function() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed) { return; }
+    var anchorNode = sel.anchorNode;
+    if (anchorNode && root.contains(anchorNode)) { return; } // ignore selections inside our own panel
+    var text = String(sel).trim();
+    if (text) { lastPageSelection = text; }
+  });
+
   rt$('rt-grab').addEventListener('click', function() {
+    if (lastPageSelection) {
+      rt$('rt-jd').value = lastPageSelection;
+      lastPageSelection = ''; // one-shot: don't keep reusing a stale selection on later clicks
+      return;
+    }
     var t = smartGrabJD();
     rt$('rt-jd').value = t || '';
     if (!t) { rt$('rt-jd').placeholder = "Couldn't isolate a job section — paste it in manually."; }
   });
-  rt$('rt-grabSel').addEventListener('click', function() {
-    var s = String(window.getSelection());
-    if (s.trim()) { rt$('rt-jd').value = s.trim(); }
-    else { rt$('rt-jd').placeholder = 'Select text on the page first, then click here.'; }
-  });
 
   /* ============ Claude via proxy ============ */
-  function callClaude(system, user, maxTok) {
+  function callClaude(system, user, maxTok, callType) {
     if (!CFG.proxyUrl) { return Promise.reject(new Error('Set your Proxy URL in Settings first.')); }
     var url = CFG.proxyUrl.trim().replace(/\/+$/, '');
     if (!/^https?:\/\//i.test(url)) { url = 'https://' + url; }
     return fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: CFG.model, max_tokens: maxTok || 2500, system: system, messages: [{ role: 'user', content: user }] })
+      body: JSON.stringify({
+        model: CFG.model, max_tokens: maxTok || 2500, system: system, messages: [{ role: 'user', content: user }],
+        // Logging-only context for the Worker's D1 log — stripped before
+        // the Worker forwards the request to Anthropic's actual API.
+        call_type: callType || 'unknown', template: CFG.template
+      })
     }).then(function(res) {
       if (!res.ok) {
         return res.text().then(function(detail) {
@@ -609,8 +632,50 @@
       }
       return res.json();
     }).then(function(data) {
-      return (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('\n');
+      var text = (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('\n');
+      var inputTokens = (data.usage && data.usage.input_tokens) || 0;
+      var outputTokens = (data.usage && data.usage.output_tokens) || 0;
+      recordRunCost(CFG.model, inputTokens, outputTokens);
+      return {
+        text: text,
+        stopReason: data.stop_reason || null,
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        maxTokensRequested: maxTok || 2500
+      };
     });
+  }
+
+  // Per-million-token USD rates. Anthropic's published rates as of mid-2026;
+  // update here if pricing changes. Unrecognized models fall back to the
+  // Sonnet rate as a reasonable estimate rather than showing nothing.
+  var MODEL_RATES = {
+    'claude-haiku-4-5-20251001': { input: 1, output: 5 },
+    'claude-sonnet-4-6': { input: 3, output: 15 },
+    'claude-opus-4-8': { input: 5, output: 25 }
+  };
+  var sessionCostTotal = 0;
+  function estimateCost(model, inputTokens, outputTokens) {
+    var rates = MODEL_RATES[model] || MODEL_RATES['claude-sonnet-4-6'];
+    return (inputTokens / 1e6) * rates.input + (outputTokens / 1e6) * rates.output;
+  }
+  function recordRunCost(model, inputTokens, outputTokens) {
+    var cost = estimateCost(model, inputTokens, outputTokens);
+    sessionCostTotal += cost;
+    var el = rt$('rt-hdCost');
+    if (!el) { return; } // header not yet built on very first call (shouldn't happen, but defensive)
+    var totalTokens = inputTokens + outputTokens;
+    el.textContent = '$' + sessionCostTotal.toFixed(3) + ' \u00B7 ' + totalTokens.toLocaleString() + ' tok (this run)';
+    el.title = 'Session total: $' + sessionCostTotal.toFixed(3) + '. Last run: ' + inputTokens.toLocaleString() + ' in / ' + outputTokens.toLocaleString() + ' out. Estimated from published per-token rates \u2014 actual billing may vary slightly.';
+  }
+  // Builds a human-readable explanation for a JSON parse failure, using the
+  // stop_reason/usage that came back with the response, instead of just
+  // showing the raw "Expected ',' or ']'..." parser error.
+  function describeParseFailure(parseError, meta) {
+    if (meta && meta.stopReason === 'max_tokens') {
+      return 'The response was cut off before it finished (used ' + meta.outputTokens + ' of ' + meta.maxTokensRequested + ' allowed tokens). This can happen with longer résumés or more verbose models. Try again \u2014 it often succeeds on a retry.';
+    }
+    return 'The response could not be read (' + parseError.message + '). This is usually temporary \u2014 try again.';
   }
   function parseJson(txt) {
     var s = txt.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -618,6 +683,24 @@
     var b = s.lastIndexOf('}');
     if (a >= 0 && b > a) { s = s.slice(a, b + 1); }
     return JSON.parse(s);
+  }
+  // Calls Claude and parses the JSON response, automatically retrying once
+  // if parsing fails (truncated/malformed JSON is often a one-off — a
+  // re-run frequently succeeds, which matches what re-running manually was
+  // already accomplishing, just without the wasted round-trip back to you).
+  // Other error types (bad proxy URL, network failure, HTTP error) are not
+  // retried here, since a retry won't fix those.
+  function callClaudeAndParse(system, user, maxTok, callType, isRetry) {
+    return callClaude(system, user, maxTok, callType).then(function(result) {
+      try {
+        return parseJson(result.text);
+      } catch (parseErr) {
+        if (!isRetry) {
+          return callClaudeAndParse(system, user, maxTok, callType, true);
+        }
+        throw new Error(describeParseFailure(parseErr, result));
+      }
+    });
   }
   function capTokens(str, maxTok) {
     var maxChars = maxTok * 4;
@@ -696,8 +779,8 @@
     btn.disabled = true;
     setBtnSpinner(btn, 'Analyzing\u2026');
     var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":""}],\n  "newBulletPrompts":[{"id":"n1","question":"Did you \u2026?","phrasingIfYes":"","rationale":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array except allCompanies, which must be complete. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
-    callClaude(SYS_A, user, 2500).then(function(text) {
-      ANALYSIS = parseJson(text);
+    callClaudeAndParse(SYS_A, user, 2500, 'analyze').then(function(parsed) {
+      ANALYSIS = parsed;
       renderReview();
       rt$('rt-reviewCard').classList.remove('hidden');
       rt$('rt-reviewCard').scrollIntoView({ behavior: 'smooth' });
@@ -900,8 +983,8 @@
     var news = Object.values(DECISIONS.news).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return d.text; });
     var skills = Array.from(DECISIONS.skills.keep).concat(Array.from(DECISIONS.skills.add));
     var user = 'ORIGINAL MATERIALS:\n' + kbText() + '\nAPPROVED TITLE CHANGES: ' + JSON.stringify(titles) + '\nAPPROVED REWRITTEN BULLETS: ' + JSON.stringify(bullets) + '\nAPPROVED NEW BULLETS: ' + JSON.stringify(news) + '\nFINAL SKILLS: ' + JSON.stringify(skills) + '\n\nBuild the complete r\u00E9sum\u00E9. Use approved titles. Place rewritten/new bullets in correct roles; keep other real bullets.\nFor top 2-3 roles set highlight to best single measurable Signature Win sentence.\nFor older/less relevant roles set condensed:true and omit bullets.\nReturn JSON exactly:\n{"name":"","tagline":"short italic descriptor","contact":"City, ST \u00B7 phone \u00B7 email \u00B7 linkedin","summary":"2-3 factual sentences tuned to the job","experience":[{"title":"","company":"","location":"","dates":"","highlight":"","condensed":false,"bullets":[""]}],"skills":[""],"education":[{"degree":"","sub":""}],"certifications":[""]}';
-    callClaude(SYS_B, user, 6000).then(function(text) {
-      LAST_RESUME = parseJson(text);
+    callClaudeAndParse(SYS_B, user, 6000, 'assemble').then(function(parsed) {
+      LAST_RESUME = parsed;
       dedupeHighlightBullets(LAST_RESUME);
       var previewEl = rt$('rt-preview');
       clearEl(previewEl);

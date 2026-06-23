@@ -2,22 +2,35 @@
 
 ## 1.1.0
 
-- **Added three new PDF styles** alongside Editorial Warmth: Slate Professional (dark sidebar, amber accents), Engineering Blueprint (monospace labels, teal accent), and Bold Data-Forward (deep-blue header band, filled callouts). All four share the same `break-inside: avoid` print-safety rules.
-- **Added a style picker** in Settings with a live preview thumbnail that renders the selected style against placeholder sample content, updating instantly as the dropdown changes — no need to run a real tailoring pass just to see what a style looks like. The thumbnail fills the full settings card width, with the description underneath.
-- **Rebuilt the floating launcher** as a small low-opacity dot instead of an always-visible pill. Click once to bring it to full opacity, click again to open the panel; a small × fades it back. The dot is also now **draggable** — it stays exactly where you drop it (no edge-snapping), and the position persists across page loads and across sites.
-- Fixed a bug where clicking the dot's fade (×) button would also reopen the panel, caused by a click event bubbling from the × up to the dot's own click handler after the drag feature was added.
-- Fixed a startup bug where a stale `true` value from a pre-1.0 install's "fully hidden" state could leave the dot permanently invisible with no way to recall it. That state is now cleared automatically on load and has been retired entirely.
-- **Added an `allCompanies` field** to the tailoring analysis step, so the company picker for "possible additions" lists every employer in your knowledge base, not just the ones that happened to get a title or bullet suggestion that run.
-- **Added automatic, standardized export filenames** following `FirstName_LastName_JobTitle_Resume` — the job title is pulled from the posting when detectable, falling back to your résumé's current role title. This drives the filename Chrome's print dialog suggests, via a `<title>` tag injected into the exported document (browsers don't otherwise let a page set its own save-as filename).
-- **Removed all remaining `innerHTML` usage** (error messages and the loading spinner), replacing it with the same `createElement`-based pattern used everywhere else in the script, so these states render correctly even under a strict CSP.
-- Removed unused `appToken` config field and the unused `GM_openInTab` permission grant.
-- The inline preview in Step 3 now renders the actual selected template's real HTML inside a sandboxed iframe, instead of a separate hand-built look-alike that only ever matched the original Editorial Warmth style. Preview, Export, and Copy HTML now always agree, since there's a single HTML builder per style.
+- **Added a usage/diagnostics log to a Cloudflare D1 database.** Each call now logs its model, call type (analyze/assemble), selected PDF style, `stop_reason`, input/output token counts, and parse success/failure to D1 for later analysis. Only call metadata is logged — résumé content and job description text are never sent to the log. Requires a one-time D1 database + Worker binding setup (see README).
+- **Added automatic retry on JSON parse failure.** If a tailoring response comes back malformed or truncated, the script now retries once automatically before showing an error, rather than requiring a manual re-click.
+- **Replaced the raw JSON parser error with a human-readable explanation** when both the original attempt and the retry fail, using the actual `stop_reason` and token usage from the response (e.g. "cut off at 5,980 of 6,000 allowed tokens") instead of `Expected ',' or ']' after array element...`.
+- **Added a discreet cost/token display** in the panel header, next to the version number. Shows the current session's running total cost and the most recent call's token usage, estimated from Anthropic's published per-model rates. Hover for a breakdown of input vs. output tokens.
+
+## 1.0.3 (reverted, not released)
+
+A fix for a thumbnail scaling race condition was implemented and then rolled back before release. The underlying glitch (a cosmetic, self-correcting issue on first panel open — see 1.0.2's note) remains unfixed for now.
+
+## 1.0.2
+
+- **Removed the separate "Use selected text" button.** It duplicated what manual paste already covers, and its own behavior wasn't self-evident from its label. Its actual value — letting you select the exact job description text yourself when the page heuristic guesses wrong — is now folded into "Grab from this page": if you've selected text on the page before clicking it, that selection is used; otherwise it falls back to the existing automatic extraction. One button, simpler row, same capability.
+- Fixed the underlying selection-tracking bug along the way: reading `window.getSelection()` at click-time was unreliable since clicking a button collapses the page's text selection before the click handler runs. The selection is now tracked continuously in the background instead.
 
 ## 1.0.0
 
 Initial public release.
 
-Earlier internal versions (1.4.6 through 1.5.2) covered the following fixes, folded into this release:
+Four PDF styles to choose from: Editorial Warmth, Slate Professional (dark sidebar, amber accents), Engineering Blueprint (monospace labels, teal accent), and Bold Data-Forward (deep-blue header band, filled callouts). All four share the same `break-inside: avoid` print-safety rules. A style picker in Settings shows a live preview thumbnail against placeholder sample content, updating instantly as the dropdown changes.
+
+The floating launcher is a small low-opacity dot rather than an always-visible pill. Click once to bring it to full opacity, click again to open the panel; a small × fades it back. The dot is also draggable — it stays exactly where you drop it (no edge-snapping), and the position persists across page loads and across sites.
+
+Exported PDFs get automatic, standardized filenames following `FirstName_LastName_JobTitle_Resume` — the job title is pulled from the posting when detectable, falling back to the résumé's current role title.
+
+The tailoring analysis step includes a complete `allCompanies` list, so the "possible additions" company picker lists every employer in the knowledge base, not just ones that received a title or bullet suggestion that run.
+
+The inline preview in Step 3 renders the actual selected template's real HTML inside a sandboxed iframe, so preview, Export, and Copy HTML always agree — there's a single HTML builder per style, not a separate hand-built look-alike.
+
+Earlier development iterations (not separately released) covered the following fixes, folded into this release:
 
 - **Fixed a missing variable declaration** that caused a `SyntaxError` on certain sites, preventing the script from initializing at all.
 - **Switched async/await to promise chains and arrow functions to `function()` declarations** throughout, for broader compatibility across site JS environments.
@@ -27,7 +40,11 @@ Earlier internal versions (1.4.6 through 1.5.2) covered the following fixes, fol
 - **Added a drift-detection warning** in the review step that flags when the generated summary diverges too far from the user's saved original, with a one-click revert.
 - **Added deduplication** to strip a role's "Signature win" highlight from also appearing as a duplicate first bullet underneath it, both via a prompt instruction and a deterministic client-side safety net.
 - **Added `break-inside: avoid` rules** to role blocks, the Signature win callout, earlier-experience rows, and sidebar blocks, so the PDF print engine keeps each unit intact across a page break instead of splitting a role's bullets mid-sentence across two pages.
+- Fixed a bug where clicking the dot's fade (×) button would also reopen the panel, caused by a click event bubbling from the × up to the dot's own click handler after the drag feature was added.
+- Fixed a startup bug where a stale `true` value from an early "fully hidden" launcher state could leave the dot permanently invisible with no way to recall it. That state is now cleared automatically on load and has been retired entirely.
+- **Removed all remaining `innerHTML` usage** (error messages and the loading spinner), replacing it with the same `createElement`-based pattern used everywhere else in the script, so these states render correctly even under a strict CSP.
+- Removed unused `appToken` config field and the unused `GM_openInTab` permission grant.
 
 ### Known open issues
-- On a two-page résumé, the sidebar's background color only renders on page 1; page 2's sidebar content currently appears on a plain white background. Chrome's print engine has inconsistent support for the CSS Paged Media features (`position: running()`, named page regions) that would be the standard fix for this. This affects all PDF styles, not just Editorial Warmth.
+- On a two-page résumé, the sidebar's background color only renders on page 1; page 2's sidebar content currently appears on a plain white background. Chrome's print engine has inconsistent support for the CSS Paged Media features (`position: running()`, named page regions) that would be the standard fix for this. This affects all PDF styles.
 - Chrome's print-to-PDF omits page-number footers defined via `@page { @bottom-right { ... } }`. A dedicated Paged Media renderer (Prince, WeasyPrint) would render them correctly; this is a Chrome limitation outside the script's control.
