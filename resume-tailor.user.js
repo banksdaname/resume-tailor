@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.1.0
+// @version      1.3.0
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
 // @author       banksdaname
 // @match        *://*/*
@@ -10,6 +10,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
+// @grant        GM_openInTab
 // @require      https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
 // @run-at       document-idle
 // @noframes
@@ -18,7 +19,114 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.1.0';
+  var SCRIPT_VERSION = '1.3.0';
+
+  /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
+     opened by the "Grab from LinkedIn" button (identified by #rt_grab).
+     Shows a small corner panel with two textareas (About, Experience) for
+     the user to paste content from the profile page. Auto-scraping the DOM
+     turns out to not work reliably — LinkedIn's actively defending against
+     it (queries return null for content that's visibly rendered). This
+     honest guided flow is the reliable alternative. ============ */
+  if (/linkedin\.com\/in\//i.test(location.href) && /#rt_grab/.test(location.hash)) {
+    var buildPasteHelper = function() {
+      var helper = document.createElement('div');
+      helper.style.cssText = 'position:fixed;top:80px;right:20px;width:360px;max-height:85vh;overflow-y:auto;background:#fff;border:2px solid #3b4cca;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:99999999;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1c2230';
+
+      var head = document.createElement('div');
+      head.style.cssText = 'background:#3b4cca;color:#fff;padding:12px 15px;border-radius:10px 10px 0 0;display:flex;align-items:center;justify-content:space-between';
+      var headTitle = document.createElement('div');
+      headTitle.style.cssText = 'font-weight:700;font-size:14px';
+      headTitle.textContent = '📄 Résumé Tailor — Grab from LinkedIn';
+      var closeBtn = document.createElement('button');
+      closeBtn.style.cssText = 'background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:0;line-height:1';
+      closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', function() { helper.remove(); });
+      head.appendChild(headTitle); head.appendChild(closeBtn);
+
+      var body = document.createElement('div');
+      body.style.cssText = 'padding:14px 15px';
+
+      var intro = document.createElement('div');
+      intro.style.cssText = 'font-size:12.5px;color:#4a5060;margin-bottom:14px;line-height:1.45';
+      intro.textContent = 'Copy your About and Experience sections from the profile below and paste them here. LinkedIn actively blocks automatic grabbing, so a quick copy/paste is the reliable path.';
+
+      var mkLabel = function(text) {
+        var l = document.createElement('label');
+        l.style.cssText = 'display:block;font-size:12px;font-weight:600;margin:10px 0 5px;color:#1c2230';
+        l.textContent = text;
+        return l;
+      };
+      var mkTa = function(placeholder, rows) {
+        var t = document.createElement('textarea');
+        t.rows = rows;
+        t.placeholder = placeholder;
+        t.style.cssText = 'width:100%;padding:8px 10px;font-size:12.5px;border:1px solid #d0d4dc;border-radius:7px;font-family:inherit;box-sizing:border-box;resize:vertical';
+        return t;
+      };
+
+      var aboutTa = mkTa('Paste your About section text here…', 4);
+      var expTa = mkTa('Paste your entire Experience section here (all roles, one after another)…', 8);
+
+      var msg = document.createElement('div');
+      msg.style.cssText = 'font-size:12px;margin-top:10px;min-height:16px';
+
+      var saveBtn = document.createElement('button');
+      saveBtn.style.cssText = 'width:100%;margin-top:12px;padding:10px;background:#3b4cca;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer';
+      saveBtn.textContent = 'Save to Résumé Tailor';
+      saveBtn.addEventListener('click', function() {
+        var aboutText = aboutTa.value.trim();
+        var expText = expTa.value.trim();
+        if (!aboutText && !expText) {
+          msg.style.color = '#b23a3a';
+          msg.textContent = 'Paste at least one section before saving.';
+          return;
+        }
+        var liText = '';
+        if (aboutText) { liText += '=== ABOUT ===\n' + aboutText + '\n\n'; }
+        if (expText) { liText += '=== EXPERIENCE ===\n' + expText; }
+
+        var KB = GM_getValue('rt_kb', null);
+        if (typeof KB === 'string') { try { KB = JSON.parse(KB); } catch(e) { KB = {}; } }
+        if (!KB || typeof KB !== 'object') { KB = {}; }
+        KB.liText = liText.trim();
+        KB.liGrabbedAt = Date.now();
+        GM_setValue('rt_kb', JSON.stringify(KB));
+
+        msg.style.color = '#1f7a34';
+        msg.textContent = '✓ Saved. You can close this tab and continue in Résumé Tailor.';
+        saveBtn.disabled = true;
+        saveBtn.style.background = '#7d84a8';
+        saveBtn.textContent = 'Saved ✓';
+      });
+
+      body.appendChild(intro);
+      body.appendChild(mkLabel('About section'));
+      body.appendChild(aboutTa);
+      body.appendChild(mkLabel('Experience section'));
+      body.appendChild(expTa);
+      body.appendChild(saveBtn);
+      body.appendChild(msg);
+
+      helper.appendChild(head);
+      helper.appendChild(body);
+      return helper;
+    };
+
+    var mountHelper = function() {
+      if (!document.body) { setTimeout(mountHelper, 200); return; }
+      document.body.appendChild(buildPasteHelper());
+    };
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      mountHelper();
+    } else {
+      document.addEventListener('DOMContentLoaded', mountHelper);
+    }
+
+    return; // ← early exit: don't build the normal panel on this tab
+  }
+  /* ============ end LinkedIn paste helper — normal panel below ============ */
 
   var CFG = {
     proxyUrl: GM_getValue('rt_proxyUrl', ''),
@@ -79,6 +187,7 @@
     #rt-root .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     #rt-root .pill{font-size:11px;padding:3px 8px;border-radius:99px;font-weight:600}
     #rt-root .pill.ok{background:#e9f7ef;color:#16a34a}
+    #rt-root .pill.ok.primary{background:#eef0fb;color:#3b4cca;font-weight:700}
     #rt-root .pill.none{background:#f0f1f4;color:#9aa0ab}
     #rt-root .hidden{display:none!important}
     #rt-root .banner{display:flex;gap:9px;background:#fdf3e7;border:1px solid #f3dcbd;color:#b45309;border-radius:9px;padding:10px 12px;font-size:12px;margin-bottom:12px}
@@ -101,7 +210,10 @@
     #rt-root .seg{display:inline-flex;border:1px solid #e6e8ee;border-radius:8px;overflow:hidden}
     #rt-root .seg button{border:none;background:#fff;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:#6b7280;font-family:inherit}
     #rt-root .seg button.on{background:#3b4cca;color:#fff}
-    #rt-root #rt-preview{border:1px solid #e6e8ee;border-radius:9px;overflow:hidden;background:#fff}
+    #rt-root .primary-source-row{display:flex;align-items:center;gap:8px;margin:8px 0 4px;font-size:11.5px;color:#4a5060}
+    #rt-root .primary-source-row input[type=radio]{margin:0;cursor:pointer}
+    #rt-root .primary-source-row label{margin:0;font-size:11.5px;font-weight:500;cursor:pointer}
+    #rt-root .primary-source-row.active label{color:#1c2230;font-weight:600}
     #rt-root #rt-preview iframe{display:block;width:100%;height:560px;border:none}
     #rt-root .tpl-preview-row{display:block;margin-top:10px}
     #rt-root .tpl-thumb{width:100%;aspect-ratio:850/1100;border:1px solid #e6e8ee;border-radius:6px;overflow:hidden;position:relative;background:#fff}
@@ -134,6 +246,26 @@
     var d = mk('div', { cls: 'field' });
     var l = mk('label'); l.textContent = labelTxt; d.appendChild(l);
     Array.prototype.slice.call(arguments, 1).forEach(function(c) { if(c) d.appendChild(c); });
+    return d;
+  }
+  // Field variant with an inline "Primary" radio next to the label, for
+  // sources the user can designate as primary in the tailor step. The
+  // radio's `value` is the source key (pdf, gdoc, li); grouping via `name`
+  // makes them mutually exclusive across the three source fields.
+  function mkFieldWithRadio(labelTxt, sourceKey) {
+    var d = mk('div', { cls: 'field' });
+    var labelRow = mk('div'); labelRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px';
+    var l = mk('label'); l.textContent = labelTxt; l.style.margin = '0';
+    var radioWrap = mk('label'); radioWrap.style.cssText = 'display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#6b7280;font-weight:normal;cursor:pointer;white-space:nowrap;margin:0';
+    var radio = mk('input', { type: 'radio', id: 'rt-primary-' + sourceKey });
+    radio.name = 'rt-primary'; radio.value = sourceKey;
+    radio.style.cssText = 'margin:0;cursor:pointer';
+    radioWrap.appendChild(radio);
+    radioWrap.appendChild(document.createTextNode('Primary'));
+    labelRow.appendChild(l);
+    labelRow.appendChild(radioWrap);
+    d.appendChild(labelRow);
+    Array.prototype.slice.call(arguments, 2).forEach(function(c) { if(c) d.appendChild(c); });
     return d;
   }
   function mkNote(id) { return mk('span', { cls: 'note', id: id }); }
@@ -183,11 +315,14 @@
   var pdfFileInp = mk('input', { type: 'file', id: 'rt-pdf', accept: 'application/pdf' });
   var pdfFileLbl = ap(mk('label', { cls: 'filebtn' }), document.createTextNode('Choose PDF'), pdfFileInp);
   var pdfState = mkNote('rt-pdfState'); pdfState.textContent = 'No file yet';
-  var liUrlInp = mkInp('text', 'rt-liUrl', 'https://linkedin.com/in/yourname'); liUrlInp.style.marginBottom = '7px';
+  var liGrabBtn = mkBtn('ghost', 'rt-liGrab', '\uD83D\uDD17 Grab from LinkedIn');
+  liGrabBtn.style.cssText = 'padding:7px 12px;font-size:12.5px;width:100%';
+  var liGrabNote = mkNote('rt-liGrabNote');
+  liGrabNote.textContent = 'Opens your LinkedIn profile in a new tab with a helper panel \u2014 paste your About and Experience sections, then click Save.';
   var kbForm = ap(mk('div', { id: 'rt-kbForm' }),
-    mkField('1 \u00B7 R\u00E9sum\u00E9 PDF', pdfFileLbl, pdfState),
-    mkField('2 \u00B7 Paste from your Google Doc (no length limit)', mkTa('rt-gdoc', '10', 'Paste your full r\u00E9sum\u00E9 text here\u2026')),
-    mkField('3 \u00B7 LinkedIn', liUrlInp, mkTa('rt-liText', '4', 'Paste your LinkedIn About + experience text\u2026')),
+    mkFieldWithRadio('1 \u00B7 R\u00E9sum\u00E9 PDF', 'pdf', pdfFileLbl, pdfState),
+    mkFieldWithRadio('2 \u00B7 Paste from your Google Doc (no length limit)', 'gdoc', mkTa('rt-gdoc', '10', 'Paste your full r\u00E9sum\u00E9 text here\u2026')),
+    mkFieldWithRadio('3 \u00B7 LinkedIn', 'li', liGrabBtn, liGrabNote),
     mkField('4 \u00B7 Your original Profile/Summary statement (used as-is, lightly tuned per job)', mkTa('rt-summary', '3', 'Paste the short profile/summary you actually want on the r\u00E9sum\u00E9 \u2014 not your LinkedIn About section.')),
     mkBtn('primary', 'rt-saveKb', 'Save knowledge base'),
     mkNote('rt-kbMsg')
@@ -428,6 +563,12 @@
   }
 
   function hydrate() {
+    // Re-read KB from storage every time the panel opens, since a save
+    // may have happened on another tab (e.g. the LinkedIn paste helper)
+    // while this tab's in-memory KB was stale.
+    var fresh = GM_getValue('rt_kb', null);
+    if (typeof fresh === 'string') { try { fresh = JSON.parse(fresh); } catch(e) { fresh = null; } }
+    if (fresh) { KB = fresh; }
     rt$('rt-proxy').value = CFG.proxyUrl;
     sel.value = CFG.model;
     var tplSel = rt$('rt-template');
@@ -511,35 +652,59 @@
   /* ============ KB ============ */
   rt$('rt-saveKb').addEventListener('click', function() {
     var gdocText = rt$('rt-gdoc').value.trim();
-    var liUrl = rt$('rt-liUrl').value.trim();
-    var liText = rt$('rt-liText').value.trim();
     var originalSummary = rt$('rt-summary').value.trim();
     var usePdf = pdfText || (KB && KB.pdfText) || '';
+    var liText = (KB && KB.liText) || ''; // preserved from last LinkedIn grab, not re-entered
     if (!usePdf && !gdocText && !liText) { rt$('rt-kbMsg').textContent = ' Add at least one source.'; return; }
-    KB = { pdfText: usePdf, gdocText: gdocText, liUrl: liUrl, liText: liText, originalSummary: originalSummary, updatedAt: Date.now() };
+
+    // Which source is designated as primary? Enforce an explicit pick when
+    // more than one source is provided — the tailor step behaves very
+    // differently depending on which is chosen, and a silent default would
+    // hide that decision from the user.
+    var primaryRadio = document.querySelector('input[name="rt-primary"]:checked');
+    var primarySource = primaryRadio ? primaryRadio.value : '';
+    var providedSources = [usePdf && 'pdf', gdocText && 'gdoc', liText && 'li'].filter(Boolean);
+    if (providedSources.length > 1 && !primarySource) {
+      rt$('rt-kbMsg').textContent = ' Choose which source is Primary before saving.';
+      return;
+    }
+    if (providedSources.length === 1 && !primarySource) {
+      primarySource = providedSources[0]; // only one option, no ambiguity
+    }
+
+    KB = { pdfText: usePdf, gdocText: gdocText, liText: liText, originalSummary: originalSummary, primarySource: primarySource, updatedAt: Date.now() };
     GM_setValue('rt_kb', JSON.stringify(KB));
     rt$('rt-kbMsg').textContent = ' Saved \u2713';
     renderKbSummary();
   });
   rt$('rt-editKb').addEventListener('click', function() {
     rt$('rt-gdoc').value = KB.gdocText || '';
-    rt$('rt-liUrl').value = KB.liUrl || '';
-    rt$('rt-liText').value = KB.liText || '';
     rt$('rt-summary').value = KB.originalSummary || '';
     if (KB.pdfText) { rt$('rt-pdfState').textContent = '\u2713 Saved PDF text on file. Choose a new PDF to replace.'; }
+    if (KB.liText) {
+      var grabbed = KB.liGrabbedAt ? new Date(KB.liGrabbedAt).toLocaleDateString() : 'previously';
+      rt$('rt-liGrabNote').textContent = '\u2713 LinkedIn grabbed ' + grabbed + '. Click to refresh.';
+    }
+    // Restore radio selection so the user's prior primary-source choice is
+    // visible when they edit the KB.
+    if (KB.primarySource) {
+      var restoreRadio = document.querySelector('input[name="rt-primary"][value="' + KB.primarySource + '"]');
+      if (restoreRadio) { restoreRadio.checked = true; }
+    }
     rt$('rt-kbSummary').classList.add('hidden');
     rt$('rt-kbForm').classList.remove('hidden');
   });
-  function pill(id, on, label) {
+  function pill(id, on, label, isPrimary) {
     var e = rt$(id);
-    e.className = 'pill ' + (on ? 'ok' : 'none');
-    e.textContent = (on ? '\u2713 ' : '\u2014 ') + label;
+    e.className = 'pill ' + (on ? (isPrimary ? 'ok primary' : 'ok') : 'none');
+    e.textContent = (isPrimary ? '\u2605 ' : (on ? '\u2713 ' : '\u2014 ')) + label + (isPrimary ? ' \u00B7 primary' : '');
   }
   function renderKbSummary() {
-    pill('rt-p1', !!KB.pdfText, 'PDF');
-    pill('rt-p2', !!KB.gdocText, 'Doc');
-    pill('rt-p3', !!(KB.liText || KB.liUrl), 'LinkedIn');
-    pill('rt-p4', !!KB.originalSummary, 'Summary');
+    var p = KB.primarySource || '';
+    pill('rt-p1', !!KB.pdfText, 'PDF', p === 'pdf');
+    pill('rt-p2', !!KB.gdocText, 'Doc', p === 'gdoc');
+    pill('rt-p3', !!KB.liText, 'LinkedIn', p === 'li');
+    pill('rt-p4', !!KB.originalSummary, 'Summary', false);
     rt$('rt-kbStatus').className = 'pill ok';
     rt$('rt-kbStatus').textContent = 'Saved';
     rt$('rt-kbForm').classList.add('hidden');
@@ -578,6 +743,14 @@
     text = text.slice(0, end).split('\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n').trim();
     return text.slice(0, 8000);
   }
+
+  /* ============ LinkedIn grab button ============ */
+  rt$('rt-liGrab').addEventListener('click', function() {
+    var note = rt$('rt-liGrabNote');
+    note.textContent = 'Opening LinkedIn\u2026 Paste your About and Experience there, then reopen this panel.';
+    GM_openInTab('https://www.linkedin.com/in/#rt_grab', { active: true, insert: true });
+    closePanel();
+  });
 
   // window.getSelection() at click-time is unreliable: clicking the Grab
   // button itself collapses whatever text was selected on the page before
@@ -696,7 +869,14 @@
         return parseJson(result.text);
       } catch (parseErr) {
         if (!isRetry) {
-          return callClaudeAndParse(system, user, maxTok, callType, true);
+          // If we hit the token ceiling, retry with 50% more tokens rather
+          // than the same limit — retrying identically is guaranteed to fail
+          // the same way. For other parse failures, keep the same limit since
+          // the issue is content formatting, not response length.
+          var retryMax = (result.stopReason === 'max_tokens')
+            ? Math.round(maxTok * 1.5)
+            : maxTok;
+          return callClaudeAndParse(system, user, retryMax, callType, true);
         }
         throw new Error(describeParseFailure(parseErr, result));
       }
@@ -708,20 +888,46 @@
   }
   function kbText() {
     var KB_MAX = 8000;
-    var source = '';
-    if (KB.gdocText && KB.gdocText.trim().length > 100) {
-      source = '=== R\u00C9SUM\u00C9 (GOOGLE DOC) ===\n' + capTokens(KB.gdocText, KB_MAX);
-    } else if (KB.pdfText && KB.pdfText.trim().length > 100) {
-      source = '=== R\u00C9SUM\u00C9 (PDF) ===\n' + capTokens(KB.pdfText, KB_MAX);
-    } else if (KB.liText && KB.liText.trim().length > 100) {
-      source = '=== LINKEDIN ===\n' + capTokens(KB.liText, KB_MAX);
+    var SUPP_MAX = 3000; // supplementary sources capped smaller since primary is what drives most content
+    var sourceLabels = { pdf: 'PDF', gdoc: 'GOOGLE DOC', li: 'LINKEDIN' };
+    var sourceTexts = { pdf: KB.pdfText || '', gdoc: KB.gdocText || '', li: KB.liText || '' };
+
+    // Primary source becomes the résumé base. Others get included as
+    // clearly labeled supplementary material so the model can pull
+    // JD-relevant experience/skills the primary missed.
+    var primaryKey = KB.primarySource;
+    if (!primaryKey || !sourceTexts[primaryKey] || sourceTexts[primaryKey].trim().length < 100) {
+      // Fallback: if no valid primary set (legacy KB or empty primary source),
+      // pick the first non-empty source in the previous priority order.
+      if (sourceTexts.gdoc.trim().length > 100) { primaryKey = 'gdoc'; }
+      else if (sourceTexts.pdf.trim().length > 100) { primaryKey = 'pdf'; }
+      else if (sourceTexts.li.trim().length > 100) { primaryKey = 'li'; }
     }
+
+    var primary = '';
+    if (primaryKey && sourceTexts[primaryKey]) {
+      primary = '=== R\u00C9SUM\u00C9 (' + sourceLabels[primaryKey] + ' \u2014 PRIMARY, use as the base r\u00E9sum\u00E9) ===\n' + capTokens(sourceTexts[primaryKey], KB_MAX);
+    }
+
+    var supp = '';
+    ['pdf', 'gdoc', 'li'].forEach(function(k) {
+      if (k === primaryKey) { return; }
+      var t = sourceTexts[k];
+      if (t && t.trim().length > 100) {
+        supp += '\n\n=== SUPPLEMENTARY (' + sourceLabels[k] + ') ===\n' + capTokens(t, SUPP_MAX);
+      }
+    });
+
     var out = '';
     if (KB.originalSummary && KB.originalSummary.trim()) {
       out += '=== ORIGINAL PROFILE/SUMMARY (use this as the base for the summary field \u2014 do not replace with LinkedIn text) ===\n' + KB.originalSummary.trim() + '\n\n';
     }
-    out += source + '\n\n';
-    if (KB.liUrl) { out += 'LinkedIn URL: ' + KB.liUrl + '\n'; }
+    out += primary;
+    if (supp) {
+      out += '\n\n[SUPPLEMENTARY SOURCES: the following are additional r\u00E9sum\u00E9 material the candidate has provided but not marked as primary. If the target job calls for a skill or experience that is not in the primary r\u00E9sum\u00E9 but is honestly documented in one of these supplementary sources, surface it as a bullet rewrite for the appropriate role or as a possible-addition suggestion, rather than asking a "Did you...?" question. Do not treat these as inferior sources \u2014 they are equally real, just not the primary structure.]';
+      out += supp;
+    }
+    out += '\n\n';
     return out;
   }
   // Rough similarity check (word-overlap ratio) used to flag when the
@@ -779,7 +985,7 @@
     btn.disabled = true;
     setBtnSpinner(btn, 'Analyzing\u2026');
     var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":""}],\n  "newBulletPrompts":[{"id":"n1","question":"Did you \u2026?","phrasingIfYes":"","rationale":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array except allCompanies, which must be complete. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
-    callClaudeAndParse(SYS_A, user, 2500, 'analyze').then(function(parsed) {
+    callClaudeAndParse(SYS_A, user, 4000, 'analyze').then(function(parsed) {
       ANALYSIS = parsed;
       renderReview();
       rt$('rt-reviewCard').classList.remove('hidden');
@@ -982,7 +1188,7 @@
     var bullets = Object.values(DECISIONS.bullets).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return { company: d.company, text: d.text }; });
     var news = Object.values(DECISIONS.news).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return d.text; });
     var skills = Array.from(DECISIONS.skills.keep).concat(Array.from(DECISIONS.skills.add));
-    var user = 'ORIGINAL MATERIALS:\n' + kbText() + '\nAPPROVED TITLE CHANGES: ' + JSON.stringify(titles) + '\nAPPROVED REWRITTEN BULLETS: ' + JSON.stringify(bullets) + '\nAPPROVED NEW BULLETS: ' + JSON.stringify(news) + '\nFINAL SKILLS: ' + JSON.stringify(skills) + '\n\nBuild the complete r\u00E9sum\u00E9. Use approved titles. Place rewritten/new bullets in correct roles; keep other real bullets.\nFor top 2-3 roles set highlight to best single measurable Signature Win sentence.\nFor older/less relevant roles set condensed:true and omit bullets.\nReturn JSON exactly:\n{"name":"","tagline":"short italic descriptor","contact":"City, ST \u00B7 phone \u00B7 email \u00B7 linkedin","summary":"2-3 factual sentences tuned to the job","experience":[{"title":"","company":"","location":"","dates":"","highlight":"","condensed":false,"bullets":[""]}],"skills":[""],"education":[{"degree":"","sub":""}],"certifications":[""]}';
+    var user = 'ORIGINAL MATERIALS:\n' + kbText() + '\nAPPROVED TITLE CHANGES: ' + JSON.stringify(titles) + '\nAPPROVED REWRITTEN BULLETS: ' + JSON.stringify(bullets) + '\nAPPROVED NEW BULLETS: ' + JSON.stringify(news) + '\nFINAL SKILLS: ' + JSON.stringify(skills) + '\n\nBuild the complete r\u00E9sum\u00E9. Use approved titles \u2014 apply them to matching roles whether the role is condensed or not (a condensed row still shows the title, just without bullets). Place rewritten/new bullets in correct roles; keep other real bullets.\nFor top 2-3 roles set highlight to best single measurable Signature Win sentence.\nFor older/less relevant roles set condensed:true and omit bullets, but still apply any approved title change for that role.\nReturn JSON exactly:\n{"name":"","tagline":"short italic descriptor","contact":"City, ST \u00B7 phone \u00B7 email \u00B7 linkedin","summary":"2-3 factual sentences tuned to the job","experience":[{"title":"","company":"","location":"","dates":"","highlight":"","condensed":false,"bullets":[""]}],"skills":[""],"education":[{"degree":"","sub":""}],"certifications":[""]}';
     callClaudeAndParse(SYS_B, user, 6000, 'assemble').then(function(parsed) {
       LAST_RESUME = parsed;
       dedupeHighlightBullets(LAST_RESUME);
