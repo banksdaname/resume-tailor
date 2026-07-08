@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.3.0
+// @version      1.4.0
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
 // @author       banksdaname
 // @match        *://*/*
@@ -19,7 +19,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.3.0';
+  var SCRIPT_VERSION = '1.4.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -138,9 +138,13 @@
   var ANALYSIS = null, DECISIONS = null, LAST_RESUME = null, pdfText = '';
 
   var MODELS = [
-    ['claude-haiku-4-5-20251001', 'Haiku 4.5 — cheapest (~2¢/run)'],
-    ['claude-sonnet-4-6', 'Sonnet 4.6 — recommended (~6¢/run)'],
-    ['claude-opus-4-8', 'Opus 4.8 — top quality (~10¢/run)'],
+    ['claude-haiku-4-5-20251001', 'Haiku 4.5 — cheapest (~5¢/run)'],
+    ['claude-sonnet-4-6', 'Sonnet 4.6 — recommended (~15¢/run)'],
+    ['claude-sonnet-5', 'Sonnet 5 — newer Sonnet (~15¢/run)'],
+    ['claude-opus-4-6', 'Opus 4.6 — older Opus (~25¢/run)'],
+    ['claude-opus-4-7', 'Opus 4.7 — Opus intermediate (~25¢/run)'],
+    ['claude-opus-4-8', 'Opus 4.8 — top Opus (~25¢/run)'],
+    ['claude-fable-5', 'Fable 5 — Mythos-class, most capable (~50¢/run)'],
   ];
 
   var esc = function(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
@@ -196,6 +200,11 @@
     #rt-root .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;font-weight:700;margin-bottom:6px}
     #rt-root .orig{font-size:12px;color:#6b7280;margin:0 0 6px;padding-left:9px;border-left:2px solid #e6e8ee}
     #rt-root .why{font-size:11.5px;color:#6b7280;margin-top:7px;font-style:italic}
+    #rt-root .seg{display:inline-flex;background:#f0f1f4;border-radius:9px;padding:3px;margin-top:8px;gap:2px}
+    #rt-root .seg .chip{border:none;background:transparent;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;color:#6b7280;transition:background .15s,color .15s;margin:0}
+    #rt-root .seg .chip:hover{color:#1c2230}
+    #rt-root .seg .chip.on-ok{background:#3b4cca;color:#fff;box-shadow:0 1px 2px rgba(59,76,202,.25)}
+    #rt-root .seg .chip.on-skip{background:#fff;color:#6b7280;box-shadow:0 1px 2px rgba(0,0,0,.06)}
     #rt-root .chip{border:1px solid #e6e8ee;background:#fff;border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-right:6px;margin-top:7px;display:inline-block}
     #rt-root .chip.on-ok{background:#e9f7ef;border-color:#bfe6cd;color:#16a34a}
     #rt-root .chip.on-skip{background:#f0f1f4;color:#9aa0ab}
@@ -819,13 +828,18 @@
     });
   }
 
-  // Per-million-token USD rates. Anthropic's published rates as of mid-2026;
-  // update here if pricing changes. Unrecognized models fall back to the
-  // Sonnet rate as a reasonable estimate rather than showing nothing.
+  // Per-million-token USD rates. Anthropic's published rates as of July 2026;
+  // update here whenever pricing changes. Unrecognized models fall back to
+  // the Sonnet rate as a reasonable middle-ground estimate rather than
+  // silently showing nothing.
   var MODEL_RATES = {
     'claude-haiku-4-5-20251001': { input: 1, output: 5 },
-    'claude-sonnet-4-6': { input: 3, output: 15 },
-    'claude-opus-4-8': { input: 5, output: 25 }
+    'claude-sonnet-4-6':         { input: 3, output: 15 },
+    'claude-sonnet-5':           { input: 3, output: 15 },
+    'claude-opus-4-6':           { input: 5, output: 25 },
+    'claude-opus-4-7':           { input: 5, output: 25 },
+    'claude-opus-4-8':           { input: 5, output: 25 },
+    'claude-fable-5':            { input: 10, output: 50 }
   };
   var sessionCostTotal = 0;
   function estimateCost(model, inputTokens, outputTokens) {
@@ -1006,6 +1020,22 @@
     Object.keys(extra).forEach(function(k) { c.dataset[k] = extra[k]; });
     return c;
   }
+  // Segmented two-button choice: an approved-side (yesLabel) and a
+  // skipped-side (noLabel), always both visible. Whichever is currently
+  // selected renders solid; the other renders as a light outline. Clicking
+  // either sets the state, no morphing labels. Consistent across title,
+  // bullet, and new-bullet suggestions.
+  function mkSegChoice(k, id, yesLabel, noLabel, initiallyApproved) {
+    var seg = mk('div', { cls: 'seg' });
+    var yes = mk('span', { cls: 'chip' + (initiallyApproved ? ' on-ok' : '') });
+    yes.textContent = yesLabel;
+    yes.dataset.act = 'seg-yes'; yes.dataset.k = k; yes.dataset.id = id;
+    var no = mk('span', { cls: 'chip' + (initiallyApproved ? '' : ' on-skip') });
+    no.textContent = noLabel;
+    no.dataset.act = 'seg-no'; no.dataset.k = k; no.dataset.id = id;
+    seg.appendChild(yes); seg.appendChild(no);
+    return seg;
+  }
   function mkRev(id, labelTxt, origTxt, inputEl, whyTxt) {
     var d = mk('div', { cls: 'rev', id: id });
     var lbl2 = mk('div', { cls: 'lbl' }); lbl2.textContent = labelTxt; d.appendChild(lbl2);
@@ -1047,7 +1077,7 @@
         var inp2 = mk('input', { type: 'text' }); inp2.value = t.suggested;
         inp2.dataset.edit = ''; inp2.dataset.k = 'titles'; inp2.dataset.id = t.id;
         var rev = mkRev('rev-titles-' + t.id, t.company || '', t.original, inp2, t.rationale || '');
-        rev.appendChild(mkChip('on-ok', 'toggle', { k: 'titles', id: t.id }, '\u2713 Use'));
+        rev.appendChild(mkSegChoice('titles', t.id, 'Use', 'Skip', true));
         titleSec.appendChild(rev);
       });
     }
@@ -1061,7 +1091,7 @@
         var ta2 = mk('textarea', { rows: '2' }); ta2.textContent = b.rewritten;
         ta2.dataset.edit = ''; ta2.dataset.k = 'bullets'; ta2.dataset.id = b.id;
         var rev = mkRev('rev-bullets-' + b.id, b.company || '', b.original, ta2, b.rationale || '');
-        rev.appendChild(mkChip('on-ok', 'toggle', { k: 'bullets', id: b.id }, '\u2713 Approve'));
+        rev.appendChild(mkSegChoice('bullets', b.id, 'Approve', 'Skip', true));
         bulletSec.appendChild(rev);
       });
     }
@@ -1104,8 +1134,7 @@
         rev.classList.add('is-skip');
         rev.insertBefore(coSel, rev.querySelector('.why') || null);
         rev.insertBefore(ta2, rev.querySelector('.why') || null);
-        rev.appendChild(mkChip('', 'new-yes', { id: n.id }, 'Yes \u2014 include'));
-        rev.appendChild(mkChip('on-skip', 'new-no', { id: n.id }, 'No'));
+        rev.appendChild(mkSegChoice('news', n.id, 'Include', 'Skip', false));
         newSec.appendChild(rev);
       });
     }
@@ -1152,19 +1181,23 @@
     var t = e.target.closest('[data-act]');
     if (!t) { return; }
     var act = t.dataset.act;
-    if (act === 'toggle') {
-      var d = DECISIONS[t.dataset.k][t.dataset.id];
-      var rev = root.querySelector('#rev-' + t.dataset.k + '-' + t.dataset.id);
-      if (d.status === 'approved') { d.status = 'skipped'; t.className = 'chip on-skip'; t.textContent = 'Skipped'; rev.classList.add('is-skip'); }
-      else { d.status = 'approved'; t.className = 'chip on-ok'; t.textContent = (t.dataset.k === 'titles' ? '\u2713 Use' : '\u2713 Approve'); rev.classList.remove('is-skip'); }
-    } else if (act === 'new-yes' || act === 'new-no') {
-      var id = t.dataset.id;
-      var nd = DECISIONS.news[id];
-      var nrev = root.querySelector('#rev-news-' + id);
-      var chips = nrev.querySelectorAll('.chip');
-      chips.forEach(function(c) { c.className = 'chip'; });
-      if (act === 'new-yes') { nd.status = 'approved'; chips[0].className = 'chip on-ok'; nrev.classList.remove('is-skip'); }
-      else { nd.status = 'skipped'; chips[1].className = 'chip on-skip'; nrev.classList.add('is-skip'); }
+    if (act === 'seg-yes' || act === 'seg-no') {
+      var k = t.dataset.k, id = t.dataset.id;
+      var d = DECISIONS[k][id];
+      var rev = root.querySelector('#rev-' + k + '-' + id);
+      var seg = t.parentNode;
+      var chips = seg.querySelectorAll('.chip');
+      if (act === 'seg-yes') {
+        d.status = 'approved';
+        chips[0].className = 'chip on-ok';
+        chips[1].className = 'chip';
+        rev.classList.remove('is-skip');
+      } else {
+        d.status = 'skipped';
+        chips[0].className = 'chip';
+        chips[1].className = 'chip on-skip';
+        rev.classList.add('is-skip');
+      }
     } else if (act === 'skill') {
       var sset = DECISIONS.skills[t.dataset.kind];
       var sv = t.dataset.skill;
