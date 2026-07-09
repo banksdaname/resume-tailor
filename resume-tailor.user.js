@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.4.0
+// @version      1.5.0
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
 // @author       banksdaname
 // @match        *://*/*
@@ -19,7 +19,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.4.0';
+  var SCRIPT_VERSION = '1.5.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -156,6 +156,8 @@
     return btoa(utf8);
   }
 
+  // Launcher-dot CSS stays in the light DOM — the dot itself lives outside
+  // the shadow root so it can use position:fixed against the outer document.
   GM_addStyle(`
     #rt-launch{position:fixed!important;z-index:2147483646!important;width:34px;height:34px;border-radius:50%;background:#3b4cca;color:#fff;display:flex!important;align-items:center;justify-content:center;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.25);border:none;cursor:grab;opacity:.22;transition:opacity .18s ease;padding:0;touch-action:none}
     #rt-launch.rt-dragging{cursor:grabbing;opacity:1;transition:none}
@@ -167,9 +169,21 @@
     #rt-launch .rt-x{display:none;position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:50%;background:#1c2230;color:#fff;border:1.5px solid #f4f5f8;font-size:11px;line-height:1;align-items:center;justify-content:center;cursor:pointer;padding:0}
     #rt-launch.rt-solid .rt-x{display:flex}
     #rt-launch .rt-x:hover{background:#3b4cca}
+    /* Shadow host is the light-DOM element that hosts our panel's shadow.
+       It needs position:fixed so it can pin to the viewport edge. Everything
+       *inside* the shadow (the actual panel UI) is isolated from host-page CSS. */
+    #rt-shadow-host{position:fixed!important;top:0!important;right:0!important;z-index:2147483647!important;width:0;height:0;pointer-events:none}
+    #rt-shadow-host.open{width:auto;height:auto;pointer-events:auto}
+  `);
+
+  // Panel CSS is injected as a <style> element inside the shadow root, where
+  // host-page CSS cannot reach it. This is the fix for CSS collisions with
+  // sites like Greenhouse, LinkedIn, etc. — no matter what rules the host page
+  // has, they can't override styles inside a shadow tree.
+  var PANEL_CSS = `
     #rt-root,#rt-root *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-    #rt-root{position:fixed!important;top:0!important;right:0!important;width:430px;max-width:96vw;height:100vh;z-index:2147483647!important;background:#f4f5f8;color:#1c2230;box-shadow:-8px 0 30px rgba(0,0,0,.18);overflow-y:auto;line-height:1.45;display:none!important}
-    #rt-root.open{display:block!important}
+    #rt-root{position:fixed;top:0;right:0;width:430px;max-width:96vw;height:100vh;background:#f4f5f8;color:#1c2230;box-shadow:-8px 0 30px rgba(0,0,0,.18);overflow-y:auto;line-height:1.45;display:none}
+    #rt-root.open{display:block}
     #rt-root .rt-hd{position:sticky;top:0;background:#fff;border-bottom:1px solid #e6e8ee;padding:13px 16px;display:flex;align-items:center;gap:9px;z-index:2}
     #rt-root .rt-hd b{font-size:15px}
     #rt-root .rt-x{margin-left:auto;border:none;background:#f0f1f4;border-radius:7px;width:28px;height:28px;cursor:pointer;font-size:16px}
@@ -216,9 +230,6 @@
     #rt-root .err{background:#fdecec;border:1px solid #f6c9c9;color:#b91c1c;border-radius:8px;padding:9px 11px;font-size:12.5px;margin-top:9px}
     #rt-root .spin{width:14px;height:14px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:rtsp .7s linear infinite;vertical-align:-2px;margin-right:6px}
     @keyframes rtsp{to{transform:rotate(360deg)}}
-    #rt-root .seg{display:inline-flex;border:1px solid #e6e8ee;border-radius:8px;overflow:hidden}
-    #rt-root .seg button{border:none;background:#fff;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:#6b7280;font-family:inherit}
-    #rt-root .seg button.on{background:#3b4cca;color:#fff}
     #rt-root .primary-source-row{display:flex;align-items:center;gap:8px;margin:8px 0 4px;font-size:11.5px;color:#4a5060}
     #rt-root .primary-source-row input[type=radio]{margin:0;cursor:pointer}
     #rt-root .primary-source-row label{margin:0;font-size:11.5px;font-weight:500;cursor:pointer}
@@ -229,7 +240,7 @@
     #rt-root .tpl-thumb iframe{width:850px;height:1100px;border:none;transform-origin:top left;pointer-events:none}
     #rt-root .tpl-preview-row .note{margin-top:8px}
     #rt-root #rt-ats{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;background:#fff}
-  `);
+  `;
 
   /* ============ DOM — createElement only, no innerHTML, bypasses LinkedIn TrustedHTML ============ */
   function mk(tag, props) {
@@ -395,7 +406,20 @@
 
   var rtBody = ap(mk('div', { cls: 'rt-body' }), cfgCard, kbCard, jdCard, reviewCard, outputCard);
   ap(root, hd, rtBody);
-  document.documentElement.appendChild(root);
+
+  // Shadow DOM setup: create a host in the light DOM, attach an open shadow
+  // root, and put both our CSS and our panel inside it. This isolates our
+  // styles from the host page's CSS completely — no matter what rules
+  // Greenhouse/LinkedIn/etc. define, they can't reach into a shadow tree.
+  // The host itself is intentionally sized 0x0 when closed; the panel's
+  // own position:fixed inside the shadow handles its actual dimensions.
+  var shadowHost = mk('div', { id: 'rt-shadow-host' });
+  document.documentElement.appendChild(shadowHost);
+  var shadow = shadowHost.attachShadow({ mode: 'open' });
+  var shadowStyle = document.createElement('style');
+  shadowStyle.textContent = PANEL_CSS;
+  shadow.appendChild(shadowStyle);
+  shadow.appendChild(root);
 
   function rt$(id) { return root.querySelector('#' + id); }
   var sel = rt$('rt-model');
@@ -418,14 +442,14 @@
      never all the way back to State A — only the dot's own X does that. */
   function reattach() {
     if (!document.documentElement.contains(launch)) { document.documentElement.appendChild(launch); }
-    if (!document.documentElement.contains(root)) { document.documentElement.appendChild(root); }
+    if (!document.documentElement.contains(shadowHost)) { document.documentElement.appendChild(shadowHost); }
   }
   function setSolid(isSolid) {
     if (isSolid) { launch.classList.add('rt-solid'); } else { launch.classList.remove('rt-solid'); }
     GM_setValue('rt_pillSolid', isSolid);
   }
-  function openPanel() { reattach(); setSolid(true); root.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } }
-  function closePanel() { root.classList.remove('open'); setSolid(true); }
+  function openPanel() { reattach(); setSolid(true); root.classList.add('open'); shadowHost.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } }
+  function closePanel() { root.classList.remove('open'); shadowHost.classList.remove('open'); setSolid(true); }
   function showPill() { reattach(); launch.classList.remove('rt-off'); GM_setValue('rt_pillHidden', false); }
 
   // Position the dot via left/top (not right/bottom) so drag math is a
@@ -669,8 +693,9 @@
     // Which source is designated as primary? Enforce an explicit pick when
     // more than one source is provided — the tailor step behaves very
     // differently depending on which is chosen, and a silent default would
-    // hide that decision from the user.
-    var primaryRadio = document.querySelector('input[name="rt-primary"]:checked');
+    // hide that decision from the user. Query is scoped to `root` because
+    // the radios live inside the shadow root, not the light DOM.
+    var primaryRadio = root.querySelector('input[name="rt-primary"]:checked');
     var primarySource = primaryRadio ? primaryRadio.value : '';
     var providedSources = [usePdf && 'pdf', gdocText && 'gdoc', liText && 'li'].filter(Boolean);
     if (providedSources.length > 1 && !primarySource) {
@@ -697,7 +722,7 @@
     // Restore radio selection so the user's prior primary-source choice is
     // visible when they edit the KB.
     if (KB.primarySource) {
-      var restoreRadio = document.querySelector('input[name="rt-primary"][value="' + KB.primarySource + '"]');
+      var restoreRadio = root.querySelector('input[name="rt-primary"][value="' + KB.primarySource + '"]');
       if (restoreRadio) { restoreRadio.checked = true; }
     }
     rt$('rt-kbSummary').classList.add('hidden');
@@ -722,35 +747,126 @@
 
   /* ============ smart JD grab ============ */
   function smartGrabJD() {
-    if (/linkedin\.com/i.test(location.hostname)) {
-      var liSels = ['.jobs-description__content', '.jobs-box__html-content', '[class*="jobs-description"]', '[class*="job-details"]', '.description__text'];
-      for (var i = 0; i < liSels.length; i++) {
-        var el = document.querySelector(liSels[i]);
+    // Normalizes a raw text blob: strip carriage returns, trim per-line
+    // whitespace, drop empty lines, collapse repeated newlines.
+    var normalize = function(txt) {
+      return txt.replace(/\r/g, '')
+        .split('\n').map(function(l) { return l.trim(); }).filter(Boolean)
+        .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    };
+
+    // Tier 1: try known ATS content selectors first. These are the most
+    // reliable when they hit — they mark the exact job description block
+    // that the ATS renders, sidestepping company boilerplate and footer.
+    // Covers LinkedIn, Greenhouse, Lever, Workable, Ashby, Rippling,
+    // SmartRecruiters, Workday, iCIMS. If any selector's content is
+    // substantial (>200 chars), use it and skip the heuristics entirely.
+    var atsSels = [
+      // LinkedIn
+      '.jobs-description__content', '.jobs-box__html-content', '[class*="jobs-description"]', '[class*="job-details"]', '.description__text',
+      // Greenhouse
+      '#content', '#app_body #content', '.opening', '.section-wrapper .content', '[class*="job__description"]',
+      // Lever
+      '.posting-page .section-wrapper', '[data-qa="job-description"]', '.section.page-centered',
+      // Workable
+      '[data-ui="job-description"]', 'section[data-ui="job"]',
+      // Ashby
+      '[class*="_descriptionText"]', '[class*="_jobPostingContent"]',
+      // SmartRecruiters
+      '.job-description-content', '[itemprop="description"]',
+      // Workday
+      '[data-automation-id="jobPostingDescription"]',
+      // iCIMS
+      '.iCIMS_JobContent', '[itemprop="description"]',
+      // Rippling / generic ATS patterns
+      '[class*="job-description" i]', '[class*="jobDescription"]',
+      // Generic microdata / semantic
+      'article[itemtype*="JobPosting"]', '[itemtype*="JobPosting"]'
+    ];
+    for (var i = 0; i < atsSels.length; i++) {
+      try {
+        var el = document.querySelector(atsSels[i]);
         if (el && (el.innerText || '').trim().length > 200) {
-          return el.innerText.replace(/\r/g, '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 8000);
+          return normalize(el.innerText).slice(0, 8000);
         }
-      }
+      } catch (e) { /* invalid selector on some browsers; skip */ }
     }
-    var startKeys = ['about the job', 'about this job', 'about the role', 'about this role', 'job description', 'job details', 'role description', "what you'll do", 'what you will do', 'responsibilities', 'overview', 'about the company', 'about us', 'who we are', 'requirements', 'qualifications', 'the role'];
-    var stopKeys = ['similar jobs', 'more jobs from', 'people also viewed', 'jobs you may be interested', 'related jobs', 'set alert', 'report this job', 'recommended for you', 'show more jobs', 'cookie policy', 'privacy policy', 'terms of service', 'sign in to', 'create alert'];
+
+    // Tier 2: fall back to keyword-anchored scan of the main content area.
+    // Prefer <main>/[role=main]/<article>; only use full body if none of
+    // those exist (they usually do).
     var mainEl = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('article');
     var text = (mainEl && (mainEl.innerText || '').trim().length > 300) ? mainEl.innerText : (document.body.innerText || '');
     text = text.replace(/\r/g, '');
     var low = text.toLowerCase();
-    var start = -1;
-    for (var si = 0; si < startKeys.length; si++) {
-      var idx = low.indexOf(startKeys[si]);
-      if (idx !== -1 && (start === -1 || idx < start)) { start = idx; }
-    }
+
+    // Tiered start keys: job-content-first headers (tier A) take priority
+    // over company info (tier B). If a tier A header exists anywhere, use
+    // it — even if a tier B header appears earlier in the doc. This fixes
+    // the "About the company" appearing before "About the job" trap.
+    var startKeysA = [
+      'about the job', 'about this job', 'about the role', 'about this role',
+      'the role', 'job description', 'job details', 'role description',
+      "what you'll do", 'what you will do', "what you'll be doing",
+      'responsibilities', 'key responsibilities', 'your responsibilities',
+      "what impact you'll have", 'what you will bring',
+      'the position', 'position summary', 'position overview', 'role summary',
+      "who you'll work with", 'requirements', 'qualifications', 'minimum qualifications', 'preferred qualifications', 'basic qualifications'
+    ];
+    var startKeysB = [
+      'about the company', 'about us', 'who we are', 'about', 'overview', 'company overview'
+    ];
+
+    var findEarliest = function(keys) {
+      var earliest = -1;
+      for (var k = 0; k < keys.length; k++) {
+        var idx = low.indexOf(keys[k]);
+        if (idx !== -1 && (earliest === -1 || idx < earliest)) { earliest = idx; }
+      }
+      return earliest;
+    };
+    var startA = findEarliest(startKeysA);
+    var startB = findEarliest(startKeysB);
+    // Use tier A if it exists at all. Fall back to tier B only if tier A found nothing.
+    var start = (startA !== -1) ? startA : startB;
     if (start > 0) { text = text.slice(start); }
+
+    // Expanded stop keys: cut before footer legal, EEO statements,
+    // benefits enumeration, salary boilerplate, related-jobs sections,
+    // and generic site chrome. Only look for these in the second half of
+    // the (already-trimmed) document — a "benefits" section that shows up
+    // in the first 500 chars is probably a nav item, not the actual end.
+    var stopKeys = [
+      // Related content
+      'similar jobs', 'more jobs from', 'people also viewed', 'jobs you may be interested', 'related jobs',
+      'recommended for you', 'show more jobs', 'other opportunities', 'other openings',
+      // Site actions/UI chrome
+      'set alert', 'report this job', 'apply for this job', 'apply now', 'share this job', 'save this job',
+      'sign in to', 'create alert', 'back to jobs',
+      // Legal footer
+      'cookie policy', 'privacy policy', 'terms of service', 'terms of use', 'terms and conditions',
+      'copyright ', '© ', 'all rights reserved',
+      // EEO / diversity statements (usually well after the actual job content)
+      'equal opportunity employer', 'equal employment opportunity', 'affirmative action',
+      'reasonable accommodation', 'e-verify', 'protected veteran',
+      // Compensation/benefits boilerplate that usually comes last
+      'salary range', 'compensation range', 'expected salary', 'base salary range',
+      'benefits include', 'we offer', 'perks and benefits', 'total rewards',
+      // Application-tracking chrome
+      'powered by', 'apply for this position', 'submit application'
+    ];
     var low2 = text.toLowerCase();
+    var halfway = Math.floor(text.length / 2);
     var end = text.length;
     for (var ki = 0; ki < stopKeys.length; ki++) {
       var kidx = low2.indexOf(stopKeys[ki]);
-      if (kidx > 200 && kidx < end) { end = kidx; }
+      // Only treat as a stop if it's in the later half — an earlier
+      // occurrence is more likely part of the job content itself
+      // (e.g. "we offer competitive compensation" inside a benefits bullet
+      // that's still part of the JD, not the site's benefits footer).
+      if (kidx > halfway && kidx < end) { end = kidx; }
     }
-    text = text.slice(0, end).split('\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n').trim();
-    return text.slice(0, 8000);
+    return normalize(text.slice(0, end)).slice(0, 8000);
   }
 
   /* ============ LinkedIn grab button ============ */
