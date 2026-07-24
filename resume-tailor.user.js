@@ -132,7 +132,19 @@
     proxyUrl: GM_getValue('rt_proxyUrl', ''),
     model: GM_getValue('rt_model', 'claude-opus-5'),
     template: GM_getValue('rt_template', 'editorial'),
+    // Effort controls how much the model thinks before answering. The API
+    // default is 'high'; 'medium' is plenty for structured extraction like
+    // this and costs meaningfully less. Stored per step so the two can
+    // differ, with a link toggle to keep them in sync.
+    effortAnalyze: GM_getValue('rt_effortAnalyze', 'medium'),
+    effortAssemble: GM_getValue('rt_effortAssemble', 'medium'),
+    effortLinked: GM_getValue('rt_effortLinked', true),
   };
+  var EFFORTS = [
+    ['low', 'Fast'],
+    ['medium', 'Balanced'],
+    ['high', 'Thorough']
+  ];
   var KB = GM_getValue('rt_kb', null);
   if (typeof KB === 'string') { try { KB = JSON.parse(KB); } catch (e) { KB = null; } }
   var ANALYSIS = null, DECISIONS = null, LAST_RESUME = null, pdfText = '';
@@ -252,6 +264,19 @@
     #rt-root .tpl-thumb{width:100%;aspect-ratio:850/1100;border:1px solid #e6e8ee;border-radius:6px;overflow:hidden;position:relative;background:#fff}
     #rt-root .tpl-thumb iframe{width:850px;height:1100px;border:none;transform-origin:top left;pointer-events:none}
     #rt-root .tpl-preview-row .note{margin-top:8px}
+    /* Linked-pair effort control. The vertical bracket on the left plus a
+       chain button in the middle borrows the "constrain proportions" idiom
+       from design tools — solid bracket = the two rows move together,
+       dashed = they're independent. */
+    #rt-root .eff-pair{position:relative;padding-left:34px;margin-top:4px}
+    #rt-root .eff-row{display:flex;align-items:center;gap:9px;margin:5px 0}
+    #rt-root .eff-row .eff-label{font-size:11.5px;font-weight:600;color:#4a5060;width:42px;flex-shrink:0}
+    #rt-root .eff-bracket{position:absolute;left:12px;top:12px;bottom:12px;width:10px;border:2px solid #3b4cca;border-right:none;border-radius:5px 0 0 5px;transition:border-color .15s}
+    #rt-root .eff-pair.unlinked .eff-bracket{border-style:dashed;border-color:#c9cdd6}
+    #rt-root .eff-link{position:absolute;left:1px;top:50%;transform:translateY(-50%);width:23px;height:23px;border-radius:50%;border:1.5px solid #3b4cca;background:#eef0fb;color:#3b4cca;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:1;transition:all .15s}
+    #rt-root .eff-link:hover{background:#3b4cca;color:#fff}
+    #rt-root .eff-pair.unlinked .eff-link{border-color:#c9cdd6;background:#fff;color:#9aa0ab;border-style:dashed}
+    #rt-root .eff-pair.unlinked .eff-link:hover{border-color:#3b4cca;color:#3b4cca;background:#eef0fb}
     #rt-root #rt-ats{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;background:#fff}
   `;
 
@@ -343,6 +368,32 @@
   var proxyInp = mkInp('text', 'rt-proxy', 'https://name.account.workers.dev');
   var modelSel = mk('select', { id: 'rt-model' });
   var templateSel = mk('select', { id: 'rt-template' });
+  // ---- Effort: two linked segmented controls ----
+  function mkEffortRow(stepKey, labelTxt) {
+    var row = mk('div', { cls: 'eff-row' });
+    var lbl = mk('span', { cls: 'eff-label' }); lbl.textContent = labelTxt;
+    var seg = mk('div', { cls: 'seg' });
+    EFFORTS.forEach(function(e) {
+      var chip = mk('span', { cls: 'chip' });
+      chip.textContent = e[1];
+      chip.dataset.effStep = stepKey;
+      chip.dataset.effVal = e[0];
+      seg.appendChild(chip);
+    });
+    row.appendChild(lbl); row.appendChild(seg);
+    return row;
+  }
+  var effLinkBtn = mk('button', { cls: 'eff-link', id: 'rt-effLink' });
+  effLinkBtn.textContent = '\uD83D\uDD17';
+  effLinkBtn.title = 'Use the same effort for both steps';
+  var effPair = ap(mk('div', { cls: 'eff-pair', id: 'rt-effPair' }),
+    mk('div', { cls: 'eff-bracket' }),
+    effLinkBtn,
+    mkEffortRow('analyze', 'Tailor'),
+    mkEffortRow('assemble', 'Build')
+  );
+  var effNote = mkNote('rt-effNote');
+
   var templateThumb = mk('div', { cls: 'tpl-thumb', id: 'rt-templateThumb' });
   var templateBlurb = mk('p', { cls: 'note', id: 'rt-templateBlurb' });
   var templatePreviewRow = ap(mk('div', { cls: 'tpl-preview-row' }), templateThumb, templateBlurb);
@@ -350,6 +401,7 @@
     ap(mk('h2'), document.createTextNode('\u2699\uFE0F Settings')),
     ap(mk('p', { cls: 'desc' }), document.createTextNode('One-time setup. Your API key stays in your Cloudflare Worker.')),
     mkField('Proxy URL', proxyInp),
+    mkField('Effort', effPair, effNote),
     mkField('Model', modelSel),
     mkField('PDF style', templateSel, templatePreviewRow),
     mkBtn('primary', 'rt-saveCfg', 'Save settings'),
@@ -385,14 +437,23 @@
   // JD card
   var grabBtn = mkBtn('ghost', 'rt-grab', 'Grab from this page'); grabBtn.style.cssText = 'padding:7px 12px;font-size:12.5px';
   var analyzeBtn = mkBtn('primary', 'rt-analyze', 'Tailor my r\u00E9sum\u00E9');
+  // Stop button sits beside the primary action and is only shown while a
+  // request is in flight. Kept as a separate control rather than morphing
+  // the primary button, so the running state and the cancel action never
+  // share one element (the same reasoning as the segmented review buttons).
+  var analyzeStopBtn = mkBtn('ghost', 'rt-analyzeStop', 'Stop');
+  analyzeStopBtn.classList.add('hidden');
   var jdCard = mkCard(
     ap(mk('h2'), document.createTextNode('\uD83C\uDFAF Step 1 \u00B7 Job description')),
     ap(mk('p', { cls: 'desc' }), document.createTextNode('Grab it off this page, or paste it in.')),
     mkRow(grabBtn),
     mkTa('rt-jd', '6', 'Paste the job description\u2026'),
-    ap(mk('div', { cls: 'row' }), analyzeBtn),
+    ap(mk('div', { cls: 'row' }), analyzeBtn, analyzeStopBtn),
     mk('div', { id: 'rt-analyzeErr' })
   );
+
+  var assembleStopBtn = mkBtn('ghost', 'rt-assembleStop', 'Stop');
+  assembleStopBtn.classList.add('hidden');
 
   // Review card
   var bannerDiv = mk('div', { cls: 'banner' });
@@ -409,7 +470,7 @@
     mk('div', { id: 'rt-bulletSec' }),
     mk('div', { id: 'rt-newSec' }),
     mk('div', { id: 'rt-skillSec' }),
-    ap(mk('div', { cls: 'row' }), mkBtn('primary', 'rt-assemble', 'Build my r\u00E9sum\u00E9 \u2192')),
+    ap(mk('div', { cls: 'row' }), mkBtn('primary', 'rt-assemble', 'Build my r\u00E9sum\u00E9 \u2192'), assembleStopBtn),
     mk('div', { id: 'rt-assembleErr' })
   );
 
@@ -703,10 +764,51 @@
     tplSel.value = CFG.template;
     rt$('rt-templateBlurb').textContent = (TEMPLATES[CFG.template] || TEMPLATES.editorial).blurb;
     renderTemplateThumb(CFG.template);
+    renderEffort();
     if (KB) { renderKbSummary(); }
   }
 
   /* ============ settings ============ */
+  /* ============ effort control ============ */
+  function effortLabel(val) {
+    for (var i = 0; i < EFFORTS.length; i++) { if (EFFORTS[i][0] === val) { return EFFORTS[i][1]; } }
+    return val;
+  }
+  function renderEffort() {
+    var pair = rt$('rt-effPair');
+    if (!pair) { return; }
+    if (CFG.effortLinked) { pair.classList.remove('unlinked'); }
+    else { pair.classList.add('unlinked'); }
+    rt$('rt-effLink').title = CFG.effortLinked
+      ? 'Linked \u2014 both steps use the same effort. Click to set them separately.'
+      : 'Separate \u2014 each step has its own effort. Click to link them.';
+    Array.prototype.forEach.call(pair.querySelectorAll('[data-eff-val]'), function(chip) {
+      var current = chip.dataset.effStep === 'analyze' ? CFG.effortAnalyze : CFG.effortAssemble;
+      chip.className = 'chip' + (chip.dataset.effVal === current ? ' on-ok' : '');
+    });
+    rt$('rt-effNote').textContent = CFG.effortLinked
+      ? 'Both steps run at ' + effortLabel(CFG.effortAnalyze) + '. Lower effort is faster and cheaper.'
+      : 'Tailor: ' + effortLabel(CFG.effortAnalyze) + ' \u00B7 Build: ' + effortLabel(CFG.effortAssemble) + '.';
+  }
+  rt$('rt-effPair').addEventListener('click', function(e) {
+    var link = e.target.closest('#rt-effLink');
+    if (link) {
+      CFG.effortLinked = !CFG.effortLinked;
+      // Linking adopts the Tailor value for both, so the two can't stay
+      // visually "linked" while actually differing.
+      if (CFG.effortLinked) { CFG.effortAssemble = CFG.effortAnalyze; }
+      renderEffort();
+      return;
+    }
+    var chip = e.target.closest('[data-eff-val]');
+    if (!chip) { return; }
+    var val = chip.dataset.effVal;
+    if (CFG.effortLinked) { CFG.effortAnalyze = val; CFG.effortAssemble = val; }
+    else if (chip.dataset.effStep === 'analyze') { CFG.effortAnalyze = val; }
+    else { CFG.effortAssemble = val; }
+    renderEffort();
+  });
+
   rt$('rt-saveCfg').addEventListener('click', function() {
     CFG.proxyUrl = rt$('rt-proxy').value.trim();
     CFG.model = sel.value;
@@ -714,6 +816,9 @@
     GM_setValue('rt_proxyUrl', CFG.proxyUrl);
     GM_setValue('rt_model', CFG.model);
     GM_setValue('rt_template', CFG.template);
+    GM_setValue('rt_effortAnalyze', CFG.effortAnalyze);
+    GM_setValue('rt_effortAssemble', CFG.effortAssemble);
+    GM_setValue('rt_effortLinked', CFG.effortLinked);
     rt$('rt-cfgMsg').textContent = ' Saved \u2713';
     setTimeout(function() { rt$('rt-cfgMsg').textContent = ''; }, 2000);
     // If a résumé was already built, refresh the preview + Step 3 explainer
@@ -1026,20 +1131,86 @@
   });
 
   /* ============ Claude via proxy ============ */
-  function callClaude(system, user, maxTok, callType) {
+  // Tracks the in-flight request so the Stop button (and the timeout) can
+  // cancel it. Module-level rather than per-call so that an abort also
+  // cancels the automatic retry inside callClaudeAndParse.
+  var activeAbort = null;
+  // Long ceiling: with thinking-enabled models (Opus 5, Sonnet 5) at the
+  // API's default high effort, a single call can legitimately run for
+  // minutes. This only exists so a truly dead request fails with a clear
+  // message instead of hanging forever.
+  var REQUEST_TIMEOUT_MS = 300000; // 5 minutes
+  // Safety net: the effort parameter's wire format is documented as a
+  // top-level output_config object, but if an API version ever rejects it,
+  // sending it would break every request. On a 400 that names the field we
+  // drop it for the rest of the session and retry once without it, so a
+  // spec change degrades to "default effort" rather than total failure.
+  var effortParamSupported = true;
+
+  // Output token ceilings. These must cover THINKING PLUS the response:
+  // on Opus 5 and Sonnet 5 thinking is on by default at high effort, and
+  // thinking tokens are drawn from max_tokens. Anthropic's guidance is at
+  // least 16k for any call at high effort. The old 4k/6k values left almost
+  // no room for the actual JSON after thinking, which is what was breaking
+  // runs on Opus 5. max_tokens is a ceiling, not a reservation — raising it
+  // costs nothing on its own; you're only billed for tokens generated.
+  var ANALYZE_MAX_TOKENS = 16000;
+  var ASSEMBLE_MAX_TOKENS = 24000;
+
+  function abortActiveRequest() {
+    if (activeAbort) { activeAbort.abort(); activeAbort = null; }
+  }
+
+  function callClaudeOnce(system, user, maxTok, callType) {
     if (!CFG.proxyUrl) { return Promise.reject(new Error('Set your Proxy URL in Settings first.')); }
     var url = CFG.proxyUrl.trim().replace(/\/+$/, '');
     if (!/^https?:\/\//i.test(url)) { url = 'https://' + url; }
+    var timedOut = false;
+    var timer = setTimeout(function() { timedOut = true; abortActiveRequest(); }, REQUEST_TIMEOUT_MS);
     return fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      signal: activeAbort ? activeAbort.signal : undefined,
       body: JSON.stringify({
         model: CFG.model, max_tokens: maxTok || 2500, system: system, messages: [{ role: 'user', content: user }],
+        // Effort controls thinking depth. Wire format per Anthropic's docs:
+        // a top-level output_config object. Chosen per step so Tailor and
+        // Build can run at different depths. Omitted entirely if the API
+        // ever rejected it earlier this session (see effortParamSupported).
+        output_config: effortParamSupported
+          ? { effort: (callType === 'assemble' ? CFG.effortAssemble : CFG.effortAnalyze) }
+          : undefined,
         // Logging-only context for the Worker's D1 log — stripped before
         // the Worker forwards the request to Anthropic's actual API.
         call_type: callType || 'unknown', template: CFG.template
       })
+    }).catch(function(netErr) {
+      clearTimeout(timer);
+      // fetch() rejects (rather than resolving with an error status) for
+      // aborts and network-level failures. Translate both into something
+      // readable — the raw versions are "AbortError" and "Failed to fetch".
+      if (netErr && netErr.name === 'AbortError') {
+        throw new Error(timedOut
+          ? 'Timed out after ' + Math.round(REQUEST_TIMEOUT_MS / 60000) + ' minutes. Thinking-enabled models (Opus 5, Sonnet 5) can be slow on long r\u00E9sum\u00E9s \u2014 try a smaller job description, or switch to Sonnet 4.6.'
+          : 'Stopped.');
+      }
+      throw new Error('Could not reach your proxy (' + url + '). Check that the Worker is deployed and the URL in Settings is correct, then try again.');
     }).then(function(res) {
+      clearTimeout(timer);
+      if (res.status === 400 && effortParamSupported) {
+        return res.text().then(function(detail) {
+          if (/output_config|effort/i.test(detail)) {
+            // Signal upward rather than retrying here: a retry inside this
+            // chain would resolve to a finished result object, which the
+            // trailing .then() would then misread as a raw API response.
+            var marker = new Error('effort parameter rejected');
+            marker.__effortRejected = true;
+            marker.__detail = detail.slice(0, 200);
+            throw marker;
+          }
+          throw new Error('API error 400 — ' + detail.slice(0, 300));
+        });
+      }
       if (!res.ok) {
         return res.text().then(function(detail) {
           throw new Error('API error ' + res.status + ' — ' + detail.slice(0, 300));
@@ -1061,6 +1232,20 @@
         outputTokens: outputTokens,
         maxTokensRequested: maxTok || 2500
       };
+    });
+  }
+
+  // Wrapper owning the one-time effort-parameter fallback. Retrying at this
+  // level (rather than mid-chain) means the retry runs the full request
+  // pipeline cleanly instead of short-circuiting into a later handler.
+  function callClaude(system, user, maxTok, callType) {
+    return callClaudeOnce(system, user, maxTok, callType).catch(function(err) {
+      if (err && err.__effortRejected) {
+        console.warn('[Résumé Tailor] API rejected the effort parameter; retrying without it for the rest of this session.', err.__detail || '');
+        effortParamSupported = false;
+        return callClaudeOnce(system, user, maxTok, callType);
+      }
+      throw err;
     });
   }
 
@@ -1092,8 +1277,11 @@
     var el = rt$('rt-hdCost');
     if (!el) { return; } // header not yet built on very first call (shouldn't happen, but defensive)
     var totalTokens = inputTokens + outputTokens;
-    el.textContent = '$' + sessionCostTotal.toFixed(3) + ' \u00B7 ' + totalTokens.toLocaleString() + ' tok (this run)';
-    el.title = 'Session total: $' + sessionCostTotal.toFixed(3) + '. Last run: ' + inputTokens.toLocaleString() + ' in / ' + outputTokens.toLocaleString() + ' out. Estimated from published per-token rates \u2014 actual billing may vary slightly.';
+    el.textContent = '~$' + sessionCostTotal.toFixed(3) + ' est \u00B7 ' + totalTokens.toLocaleString() + ' tok';
+    el.title = 'Estimated session total: ~$' + sessionCostTotal.toFixed(3)
+      + '. Last run: ' + inputTokens.toLocaleString() + ' in / ' + outputTokens.toLocaleString() + ' out.'
+      + '\nEstimate only \u2014 computed from published per-token rates.'
+      + '\nStopped runs are NOT counted here, but may still be billed: cancelling closes the browser connection, it does not stop generation on Anthropic\'s side. Your D1 log records those runs.';
   }
   // Builds a human-readable explanation for a JSON parse failure, using the
   // stop_reason/usage that came back with the response, instead of just
@@ -1238,19 +1426,27 @@
     if (!jd) { showErr(errEl, 'Add the job description first.'); return; }
     btn.disabled = true;
     setBtnSpinner(btn, 'Analyzing\u2026');
+    activeAbort = new AbortController();
+    rt$('rt-analyzeStop').classList.remove('hidden');
     var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":""}],\n  "newBulletPrompts":[{"id":"n1","question":"Did you \u2026?","phrasingIfYes":"","rationale":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array except allCompanies, which must be complete. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
-    callClaudeAndParse(SYS_A, user, 4000, 'analyze').then(function(parsed) {
+    callClaudeAndParse(SYS_A, user, ANALYZE_MAX_TOKENS, 'analyze').then(function(parsed) {
       ANALYSIS = parsed;
       renderReview();
       rt$('rt-reviewCard').classList.remove('hidden');
       rt$('rt-reviewCard').scrollIntoView({ behavior: 'smooth' });
     }).catch(function(e) {
-      showErr(errEl, e.message);
+      // A deliberate Stop isn't an error — the spinner clearing and the
+      // button returning to normal is enough feedback. Showing it in a red
+      // error box would misrepresent an intentional action as a failure.
+      if (e.message !== 'Stopped.') { showErr(errEl, e.message); }
     }).then(function() {
+      activeAbort = null;
+      rt$('rt-analyzeStop').classList.add('hidden');
       btn.disabled = false;
       btn.textContent = 'Tailor my r\u00E9sum\u00E9';
     });
   });
+  rt$('rt-analyzeStop').addEventListener('click', abortActiveRequest);
 
   /* ============ review cards — createElement only, no innerHTML ============ */
   function mkChip(cls, act, extra, label) {
@@ -1457,12 +1653,14 @@
     clearEl(errEl);
     btn.disabled = true;
     setBtnSpinner(btn, 'Building\u2026');
+    activeAbort = new AbortController();
+    rt$('rt-assembleStop').classList.remove('hidden');
     var titles = Object.values(DECISIONS.titles).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return { company: d.company, original: d.original, use: d.text }; });
     var bullets = Object.values(DECISIONS.bullets).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return { company: d.company, text: d.text }; });
     var news = Object.values(DECISIONS.news).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return d.text; });
     var skills = Array.from(DECISIONS.skills.keep).concat(Array.from(DECISIONS.skills.add));
     var user = 'ORIGINAL MATERIALS:\n' + kbText() + '\nAPPROVED TITLE CHANGES: ' + JSON.stringify(titles) + '\nAPPROVED REWRITTEN BULLETS: ' + JSON.stringify(bullets) + '\nAPPROVED NEW BULLETS: ' + JSON.stringify(news) + '\nFINAL SKILLS: ' + JSON.stringify(skills) + '\n\nBuild the complete r\u00E9sum\u00E9. Use approved titles \u2014 apply them to matching roles whether the role is condensed or not (a condensed row still shows the title, just without bullets). Place rewritten/new bullets in correct roles; keep other real bullets.\nFor top 2-3 roles set highlight to best single measurable Signature Win sentence.\nFor older/less relevant roles set condensed:true and omit bullets, but still apply any approved title change for that role.\nReturn JSON exactly:\n{"name":"","tagline":"short italic descriptor","contact":"City, ST \u00B7 phone \u00B7 email \u00B7 linkedin","summary":"2-3 factual sentences tuned to the job","experience":[{"title":"","company":"","location":"","dates":"","highlight":"","condensed":false,"bullets":[""]}],"skills":[""],"education":[{"degree":"","sub":""}],"certifications":[""]}';
-    callClaudeAndParse(SYS_B, user, 6000, 'assemble').then(function(parsed) {
+    callClaudeAndParse(SYS_B, user, ASSEMBLE_MAX_TOKENS, 'assemble').then(function(parsed) {
       LAST_RESUME = parsed;
       dedupeHighlightBullets(LAST_RESUME);
       var previewEl = rt$('rt-preview');
@@ -1504,12 +1702,18 @@
       rt$('rt-outputCard').classList.remove('hidden');
       rt$('rt-outputCard').scrollIntoView({ behavior: 'smooth' });
     }).catch(function(e) {
-      showErr(errEl, e.message);
+      // A deliberate Stop isn't an error — the spinner clearing and the
+      // button returning to normal is enough feedback. Showing it in a red
+      // error box would misrepresent an intentional action as a failure.
+      if (e.message !== 'Stopped.') { showErr(errEl, e.message); }
     }).then(function() {
+      activeAbort = null;
+      rt$('rt-assembleStop').classList.add('hidden');
       btn.disabled = false;
       btn.textContent = 'Build my r\u00E9sum\u00E9 \u2192';
     });
   });
+  rt$('rt-assembleStop').addEventListener('click', abortActiveRequest);
 
   /* ============ preview — renders the SAME HTML the active template's
      builder produces for Export/Copy HTML, inside a sandboxed iframe via

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.0
+
+- **Fixed runs failing on Opus 5 ("Failed to fetch").** Opus 5 and Sonnet 5 run with thinking on by default at high effort, and thinking tokens are drawn from the same `max_tokens` budget as the response. The previous ceilings (4,000 analyze / 6,000 assemble) left almost no room for the actual JSON after thinking. Raised to 16,000 and 24,000, matching Anthropic's guidance of at least 16K for calls at high effort. `max_tokens` is a ceiling rather than a reservation, so raising it costs nothing on its own.
+- **Added a Stop button** to both the Tailor and Build steps. It appears only while a request is running and cancels it immediately. Stopping is treated as a deliberate action, not an error — no red error box.
+- **Added a 5-minute request timeout** so a dead request fails with an explanation instead of hanging indefinitely.
+- **Replaced opaque network errors with actionable ones.** A failed request previously surfaced the browser's raw "Failed to fetch". It now names the proxy URL and points at the Worker deployment as the thing to check.
+
 ## 1.6.0
 
 - **Refreshed the model lineup.** Added **Claude Opus 5** (released July 24, 2026) and made it the default. Removed Haiku 4.5 and Opus 4.6. Current options: Sonnet 4.6, Sonnet 5, Opus 4.7, Opus 4.8, Opus 5, Fable 5.

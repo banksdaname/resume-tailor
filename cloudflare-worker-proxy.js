@@ -20,7 +20,7 @@
  */
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders() });
@@ -58,7 +58,13 @@ export default {
     delete anthropicBody.call_type;
     delete anthropicBody.template;
 
-    try {
+    // The upstream call and the D1 write are bundled into one promise so it
+    // can be registered with ctx.waitUntil(). Without that, a client that
+    // disconnects mid-request (the panel's Stop button, a closed tab, a
+    // dropped connection) can get this Worker terminated before the log is
+    // written — so the run would still be billed by Anthropic but leave no
+    // trace in D1. waitUntil() lets the fetch and the log finish regardless.
+    const work = (async () => {
       const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -71,9 +77,9 @@ export default {
 
       const text = await anthropicRes.text();
 
-      // Log call metadata to D1. This never blocks or fails the actual
-      // response to the userscript — if logging itself errors (binding not
-      // set up yet, D1 quota, etc.) we swallow it so the proxy still works.
+      // Logging never blocks or fails the actual response to the userscript —
+      // if it errors (binding not set up yet, D1 quota, etc.) we swallow it
+      // so the proxy still works.
       try {
         await logRun(env, {
           callType,
@@ -87,8 +93,15 @@ export default {
         // Intentionally swallowed — see comment above.
       }
 
-      return new Response(text, {
-        status: anthropicRes.status,
+      return { text, status: anthropicRes.status };
+    })();
+
+    if (ctx && typeof ctx.waitUntil === 'function') { ctx.waitUntil(work); }
+
+    try {
+      const result = await work;
+      return new Response(result.text, {
+        status: result.status,
         headers: { 'content-type': 'application/json', ...corsHeaders() },
       });
     } catch (err) {
