@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.5.0
+// @version      1.6.0
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
 // @author       banksdaname
 // @match        *://*/*
@@ -19,7 +19,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.5.0';
+  var SCRIPT_VERSION = '1.6.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -130,22 +130,37 @@
 
   var CFG = {
     proxyUrl: GM_getValue('rt_proxyUrl', ''),
-    model: GM_getValue('rt_model', 'claude-sonnet-4-6'),
+    model: GM_getValue('rt_model', 'claude-opus-5'),
     template: GM_getValue('rt_template', 'editorial'),
   };
   var KB = GM_getValue('rt_kb', null);
   if (typeof KB === 'string') { try { KB = JSON.parse(KB); } catch (e) { KB = null; } }
   var ANALYSIS = null, DECISIONS = null, LAST_RESUME = null, pdfText = '';
 
+  // Current Anthropic lineup as of July 2026. To add/retire a model, edit
+  // BOTH this list and MODEL_RATES below — they're kept in sync manually.
   var MODELS = [
-    ['claude-haiku-4-5-20251001', 'Haiku 4.5 — cheapest (~5¢/run)'],
-    ['claude-sonnet-4-6', 'Sonnet 4.6 — recommended (~15¢/run)'],
-    ['claude-sonnet-5', 'Sonnet 5 — newer Sonnet (~15¢/run)'],
-    ['claude-opus-4-6', 'Opus 4.6 — older Opus (~25¢/run)'],
-    ['claude-opus-4-7', 'Opus 4.7 — Opus intermediate (~25¢/run)'],
-    ['claude-opus-4-8', 'Opus 4.8 — top Opus (~25¢/run)'],
+    ['claude-sonnet-4-6', 'Sonnet 4.6 — budget (~15¢/run)'],
+    ['claude-sonnet-5', 'Sonnet 5 — fast + capable (~15¢/run)'],
+    ['claude-opus-4-7', 'Opus 4.7 — older Opus (~25¢/run)'],
+    ['claude-opus-4-8', 'Opus 4.8 — previous Opus (~25¢/run)'],
+    ['claude-opus-5', 'Opus 5 — recommended (~25¢/run)'],
     ['claude-fable-5', 'Fable 5 — Mythos-class, most capable (~50¢/run)'],
   ];
+  // Models removed from the dropdown but possibly still saved in a user's
+  // settings from an earlier version. Without this migration, `sel.value =
+  // CFG.model` would silently fail to match any <option>, leaving the
+  // dropdown blank and sending a retired model ID to the API.
+  var RETIRED_MODELS = ['claude-haiku-4-5-20251001', 'claude-opus-4-6', 'claude-opus-4-5'];
+  (function migrateRetiredModel() {
+    var stillOffered = MODELS.some(function(m) { return m[0] === CFG.model; });
+    if (!stillOffered) {
+      var wasRetired = RETIRED_MODELS.indexOf(CFG.model) !== -1;
+      CFG.model = 'claude-opus-5';
+      GM_setValue('rt_model', CFG.model);
+      if (wasRetired) { console.info('[Résumé Tailor] Your previously selected model was retired; switched to Opus 5.'); }
+    }
+  })();
 
   var esc = function(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
 
@@ -160,15 +175,13 @@
   // the shadow root so it can use position:fixed against the outer document.
   GM_addStyle(`
     #rt-launch{position:fixed!important;z-index:2147483646!important;width:34px;height:34px;border-radius:50%;background:#3b4cca;color:#fff;display:flex!important;align-items:center;justify-content:center;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.25);border:none;cursor:grab;opacity:.22;transition:opacity .18s ease;padding:0;touch-action:none}
-    #rt-launch.rt-dragging{cursor:grabbing;opacity:1;transition:none}
-    #rt-launch:hover{opacity:.45}
-    #rt-launch.rt-solid{opacity:1}
-    #rt-launch.rt-solid:hover{opacity:1}
+    #rt-launch.rt-dragging{cursor:grabbing!important;opacity:1!important;transition:none!important}
+    #rt-launch:hover{opacity:.45!important}
+    #rt-launch.rt-solid{opacity:1!important}
+    #rt-launch.rt-solid:hover{opacity:1!important}
     #rt-launch.rt-off{display:none!important}
     #rt-launch .rt-dotlabel{pointer-events:none}
-    #rt-launch .rt-x{display:none;position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:50%;background:#1c2230;color:#fff;border:1.5px solid #f4f5f8;font-size:11px;line-height:1;align-items:center;justify-content:center;cursor:pointer;padding:0}
-    #rt-launch.rt-solid .rt-x{display:flex}
-    #rt-launch .rt-x:hover{background:#3b4cca}
+    #rt-launch .rt-x:hover{background:#3b4cca!important}
     /* Shadow host is the light-DOM element that hosts our panel's shadow.
        It needs position:fixed so it can pin to the viewport edge. Everything
        *inside* the shadow (the actual panel UI) is isolated from host-page CSS. */
@@ -295,8 +308,22 @@
 
   var launch = mk('button', { id: 'rt-launch' });
   launch.title = 'R\u00E9sum\u00E9 Tailor';
+  // Critical base styles applied INLINE so the dot survives even if our
+  // GM_addStyle stylesheet is wiped from <head> by a hostile page re-render
+  // (observed on Greenhouse: pill flashes then "vanishes" while the element
+  // itself is still in the DOM — the stylesheet was the casualty, not the
+  // node). The stylesheet still layers state-dependent styles (hover,
+  // solid, dragging, the X button) on top; these inline rules only cover
+  // what's existence-critical: fixed positioning, size, shape, visibility.
+  launch.style.cssText = 'position:fixed;z-index:2147483646;width:34px;height:34px;border-radius:50%;background:#3b4cca;color:#fff;display:flex;align-items:center;justify-content:center;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.25);border:none;cursor:grab;opacity:.22;transition:opacity .18s ease;padding:0;touch-action:none';
   var dotLabel = mk('span', { cls: 'rt-dotlabel' }); dotLabel.textContent = 'RT';
+  dotLabel.style.cssText = 'pointer-events:none';
   var hbtn = mk('span', { cls: 'rt-x' }); hbtn.title = 'Fade'; hbtn.textContent = '\u00D7';
+  // The X is fully inline-styled and toggled from JS (see setSolid), not
+  // from the stylesheet's ".rt-solid .rt-x{display:flex}" rule — on pages
+  // that wipe our stylesheet (Greenhouse), that rule vanishes and the ×
+  // would otherwise render as plain text inside the pill ("RT×").
+  hbtn.style.cssText = 'display:none;position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:50%;background:#1c2230;color:#fff;border:1.5px solid #f4f5f8;font-size:11px;line-height:1;align-items:center;justify-content:center;cursor:pointer;padding:0';
   ap(launch, dotLabel, hbtn);
   document.documentElement.appendChild(launch);
 
@@ -441,15 +468,34 @@
      Closing the panel (its own × in the header) returns to State B,
      never all the way back to State A — only the dot's own X does that. */
   function reattach() {
-    if (!document.documentElement.contains(launch)) { document.documentElement.appendChild(launch); }
-    if (!document.documentElement.contains(shadowHost)) { document.documentElement.appendChild(shadowHost); }
+    try {
+      if (!document.documentElement.contains(launch)) { document.documentElement.appendChild(launch); }
+      if (!document.documentElement.contains(shadowHost)) { document.documentElement.appendChild(shadowHost); }
+    } catch (e) {
+      // Never let a transient DOM error (e.g. a hostile page's own React
+      // hydration recovery touching the document at an awkward moment)
+      // silently kill the whole recovery loop — setInterval does not
+      // auto-retry a callback that throws, so without this the panel could
+      // vanish forever from a single one-off error.
+      console.warn('[Résumé Tailor] reattach() failed, will retry:', e);
+    }
   }
   function setSolid(isSolid) {
     if (isSolid) { launch.classList.add('rt-solid'); } else { launch.classList.remove('rt-solid'); }
+    // State visuals applied inline so they survive stylesheet wipes on
+    // hostile pages (Greenhouse): opacity for the solid/faded look, and
+    // the ×'s visibility, which used to depend on a ".rt-solid .rt-x" rule.
+    launch.style.opacity = isSolid ? '1' : '.22';
+    hbtn.style.display = isSolid ? 'flex' : 'none';
     GM_setValue('rt_pillSolid', isSolid);
   }
-  function openPanel() { reattach(); setSolid(true); root.classList.add('open'); shadowHost.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } }
-  function closePanel() { root.classList.remove('open'); shadowHost.classList.remove('open'); setSolid(true); }
+  // The dot hides while the panel is open (it would otherwise float on top
+  // of the page next to an already-open panel, serving no purpose) and comes
+  // back on close. Uses inline display, kept separate from the opacity/X
+  // state that setSolid manages, so the two never fight — and so it survives
+  // stylesheet wipes like the rest of the launcher's styling.
+  function openPanel() { reattach(); setSolid(true); launch.style.display = 'none'; root.classList.add('open'); shadowHost.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } }
+  function closePanel() { root.classList.remove('open'); shadowHost.classList.remove('open'); launch.style.display = 'flex'; setSolid(true); }
   function showPill() { reattach(); launch.classList.remove('rt-off'); GM_setValue('rt_pillHidden', false); }
 
   // Position the dot via left/top (not right/bottom) so drag math is a
@@ -535,11 +581,38 @@
   // always has a click-to-recall path.
   GM_setValue('rt_pillHidden', false);
 
-  if (GM_getValue('rt_pillSolid', false) === true) { launch.classList.add('rt-solid'); }
+  if (GM_getValue('rt_pillSolid', false) === true) { launch.classList.add('rt-solid'); launch.style.opacity = '1'; hbtn.style.display = 'flex'; }
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Open R\u00E9sum\u00E9 Tailor', function() { showPill(); openPanel(); });
   }
   setInterval(reattach, 1500);
+
+  // MutationObserver: react instantly if our launcher or shadow host gets
+  // removed from the page, rather than waiting up to 1.5s for the next
+  // interval tick. This matters most on sites doing repeated client-side
+  // re-renders (observed on Greenhouse: multiple "React recovered from an
+  // error during hydration" cycles in the console) where our nodes can get
+  // caught in the churn. The interval above stays as a backstop in case the
+  // observer itself doesn't catch a particular removal path.
+  if (typeof MutationObserver !== 'undefined') {
+    try {
+      var domObserver = new MutationObserver(function(mutations) {
+        for (var m = 0; m < mutations.length; m++) {
+          if (mutations[m].removedNodes && mutations[m].removedNodes.length) {
+            for (var r = 0; r < mutations[m].removedNodes.length; r++) {
+              if (mutations[m].removedNodes[r] === launch || mutations[m].removedNodes[r] === shadowHost) {
+                reattach();
+                return;
+              }
+            }
+          }
+        }
+      });
+      domObserver.observe(document.documentElement, { childList: true });
+    } catch (e) {
+      console.warn('[Résumé Tailor] MutationObserver setup failed, relying on interval only:', e);
+    }
+  }
 
   /* ============ hydrate ============ */
   // Generic placeholder résumé content used ONLY for the style-preview
@@ -583,13 +656,23 @@
   }
   window.addEventListener('resize', rescaleTemplateThumb);
 
+  var lastThumbBlobUrl = null;
   function renderTemplateThumb(templateId) {
     var t = TEMPLATES[templateId] || TEMPLATES.editorial;
     var thumbEl = rt$('rt-templateThumb');
     clearEl(thumbEl);
+    // Use a blob URL instead of srcdoc — some sites' strict CSP (observed on
+    // LinkedIn) blocks script execution inside a sandboxed srcdoc frame and,
+    // rather than just skipping the (unneeded) script, refuses to render the
+    // frame's content at all, falling back to showing raw source text. Blob
+    // URLs are treated differently by CSP and are the same technique already
+    // proven to work for PDF export on LinkedIn.
+    if (lastThumbBlobUrl) { URL.revokeObjectURL(lastThumbBlobUrl); }
+    var blob = new Blob([t.build(SAMPLE_RESUME)], { type: 'text/html' });
+    lastThumbBlobUrl = URL.createObjectURL(blob);
     var frame = document.createElement('iframe');
     frame.setAttribute('sandbox', '');
-    frame.srcdoc = t.build(SAMPLE_RESUME);
+    frame.src = lastThumbBlobUrl;
     thumbEl.appendChild(frame);
     // Defer one frame so clientWidth is accurate after layout settles.
     requestAnimationFrame(rescaleTemplateThumb);
@@ -785,9 +868,46 @@
     ];
     for (var i = 0; i < atsSels.length; i++) {
       try {
-        var el = document.querySelector(atsSels[i]);
-        if (el && (el.innerText || '').trim().length > 200) {
-          return normalize(el.innerText).slice(0, 8000);
+        var els = document.querySelectorAll(atsSels[i]);
+        if (!els || !els.length) { continue; }
+        // Two ATS patterns need different handling:
+        // - Lever splits ONE job description across several sibling
+        //   elements sharing a class under the same parent. Those should
+        //   be concatenated (querySelector alone silently truncated after
+        //   the intro paragraph).
+        // - LinkedIn's job-list pages have MANY scattered matches for
+        //   broad selectors (the real JD pane plus recommendation cards,
+        //   footer chrome, promos). Concatenating those stitches junk
+        //   together. For scattered matches, take the single largest one.
+        // Distinguish by parent: same-parent siblings get concatenated;
+        // scattered matches resolve to the longest single match.
+        var seenTexts = {};
+        var candidates = [];
+        for (var j = 0; j < els.length; j++) {
+          var t = (els[j].innerText || '').trim();
+          if (t.length < 20) { continue; } // skip empty/near-empty fragments
+          if (seenTexts[t]) { continue; } // skip exact duplicate (nested match)
+          seenTexts[t] = true;
+          candidates.push({ el: els[j], text: t });
+        }
+        if (!candidates.length) { continue; }
+
+        var sameParent = candidates.length > 1 && candidates.every(function(c) {
+          return c.el.parentNode === candidates[0].el.parentNode;
+        });
+
+        var combined;
+        if (sameParent) {
+          combined = candidates.map(function(c) { return c.text; }).join('\n\n');
+        } else {
+          var largest = candidates[0];
+          for (var k = 1; k < candidates.length; k++) {
+            if (candidates[k].text.length > largest.text.length) { largest = candidates[k]; }
+          }
+          combined = largest.text;
+        }
+        if (combined.length > 200) {
+          return normalize(combined).slice(0, 8000);
         }
       } catch (e) { /* invalid selector on some browsers; skip */ }
     }
@@ -948,14 +1068,18 @@
   // update here whenever pricing changes. Unrecognized models fall back to
   // the Sonnet rate as a reasonable middle-ground estimate rather than
   // silently showing nothing.
+  // Sonnet 5 note: Anthropic is running introductory pricing of $2/$10
+  // through Aug 31 2026, after which it becomes $3/$15. We encode the
+  // standard rate so the estimate never *under*-reports once the intro
+  // window closes — during the intro period the real cost is lower than
+  // shown, which is the safer direction to be wrong in.
   var MODEL_RATES = {
-    'claude-haiku-4-5-20251001': { input: 1, output: 5 },
-    'claude-sonnet-4-6':         { input: 3, output: 15 },
-    'claude-sonnet-5':           { input: 3, output: 15 },
-    'claude-opus-4-6':           { input: 5, output: 25 },
-    'claude-opus-4-7':           { input: 5, output: 25 },
-    'claude-opus-4-8':           { input: 5, output: 25 },
-    'claude-fable-5':            { input: 10, output: 50 }
+    'claude-sonnet-4-6': { input: 3, output: 15 },
+    'claude-sonnet-5':   { input: 3, output: 15 },
+    'claude-opus-4-7':   { input: 5, output: 25 },
+    'claude-opus-4-8':   { input: 5, output: 25 },
+    'claude-opus-5':     { input: 5, output: 25 },
+    'claude-fable-5':    { input: 10, output: 50 }
   };
   var sessionCostTotal = 0;
   function estimateCost(model, inputTokens, outputTokens) {
@@ -1389,14 +1513,21 @@
 
   /* ============ preview — renders the SAME HTML the active template's
      builder produces for Export/Copy HTML, inside a sandboxed iframe via
-     srcdoc. This guarantees the inline preview can never drift out of sync
-     with what actually gets exported, since there is only one HTML string
-     per template, not a second hand-built look-alike. ============ */
+     a blob URL. This guarantees the inline preview can never drift out of
+     sync with what actually gets exported, since there is only one HTML
+     string per template, not a second hand-built look-alike. Uses a blob
+     URL rather than srcdoc because some sites' strict CSP (observed on
+     LinkedIn) blocks sandboxed srcdoc frames from rendering at all, falling
+     back to showing raw source text instead of the page. ============ */
+  var lastPreviewBlobUrl = null;
   function buildPreviewFrame(r) {
     var html = activeTemplateBuild()(r);
+    if (lastPreviewBlobUrl) { URL.revokeObjectURL(lastPreviewBlobUrl); }
+    var blob = new Blob([html], { type: 'text/html' });
+    lastPreviewBlobUrl = URL.createObjectURL(blob);
     var frame = document.createElement('iframe');
     frame.setAttribute('sandbox', ''); // no scripts, no same-origin — pure static render
-    frame.srcdoc = html;
+    frame.src = lastPreviewBlobUrl;
     return frame;
   }
 

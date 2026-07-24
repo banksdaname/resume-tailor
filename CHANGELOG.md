@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.6.0
+
+- **Refreshed the model lineup.** Added **Claude Opus 5** (released July 24, 2026) and made it the default. Removed Haiku 4.5 and Opus 4.6. Current options: Sonnet 4.6, Sonnet 5, Opus 4.7, Opus 4.8, Opus 5, Fable 5.
+- **Added migration for retired models.** A model saved in settings that no longer appears in the dropdown would previously leave the selector blank and send a dead model ID to the API. Retired selections now switch to the current default automatically.
+- Sonnet 5's cost estimate uses its standard $3/$15 rate rather than the introductory $2/$10 rate (in effect through Aug 31, 2026), so the estimate slightly over-reports during the intro window instead of silently under-reporting after it ends.
+- **The launcher dot now hides while the panel is open** and returns when it closes.
+
+## 1.5.x — site-compatibility hardening
+
+- **Moved the panel into a Shadow DOM (1.5.0).** Host-page CSS can no longer reach the panel's styles, fixing layout corruption seen on Greenhouse and other sites with aggressive stylesheets. Previously the panel could render completely unstyled — full-width, no cards, no spacing — depending on the site.
+- **Made the launcher dot survive stylesheet wipes (1.5.5).** On Greenhouse, repeated React hydration-recovery cycles were removing the injected stylesheet from `<head>`, leaving the dot present in the DOM but invisible (and later rendering its × as plain text inside the pill). The dot's critical styles are now applied inline on the element, with visibility state driven from JS rather than CSS classes.
+- **Added DOM-removal recovery (1.5.1).** A `MutationObserver` now restores the launcher and panel host immediately if the page removes them, instead of waiting up to 1.5s for the next interval check. The reattach loop is also wrapped in try/catch so a single transient error can't permanently kill it.
+- **Fixed the template preview on LinkedIn (1.5.2).** LinkedIn's CSP blocked sandboxed `srcdoc` iframes from rendering, causing the preview to display raw CSS source text instead of the résumé. Previews now load via blob URLs — the same approach already used for PDF export.
+- **Fixed job-description capture across ATS layouts (1.5.3, 1.5.4).** Lever splits a posting across several sibling sections; only the first was being captured, silently truncating the grab after the intro paragraph. Matches that are siblings under one parent are now concatenated. Scattered matches (LinkedIn's job-list pages, where broad selectors also hit promos and footer chrome) resolve to the single largest match instead.
+
+## 1.4.x
+
+- **Replaced the review step's toggle buttons with segmented controls.** Each suggestion now shows both options side by side — `Use | Skip`, `Approve | Skip`, `Include | Skip` — with the active one filled. Previously a single button changed both its label and meaning on click ("✓ Use" became "Skipped"), which was easy to misread.
+- **Improved job-description extraction heuristics (1.4.1).** Job-specific headings ("About the role", "What you'll do", "Responsibilities") now take priority over company headings, so a posting that opens with "About the company" no longer starts the capture on boilerplate. Added selectors for Greenhouse, Lever, Workable, Ashby, SmartRecruiters, Workday, and iCIMS, and expanded the stop-keyword list to trim EEO statements, benefits blocks, and footer legal text.
+
+## 1.3.0
+
+- **Added a primary-source selector.** Each knowledge base source (PDF, Google Doc, LinkedIn) now has a "Primary" radio button. Previously the script silently used the Google Doc and ignored the other two entirely.
+- **Supplementary sources are now used.** The primary source is the résumé base; the others are passed as clearly labelled supplementary material. If the job calls for something documented in a supplementary source but missing from the primary, it surfaces as a normal bullet-rewrite or possible-addition suggestion for you to approve — nothing is added automatically.
+- **Fixed approved title changes not applying to condensed roles.** Roles in the "Earlier Experience" section kept their original titles even when a title change was approved.
+
+## 1.2.x — LinkedIn import
+
+- **Added "Grab from LinkedIn"** to the knowledge base, replacing the URL field and paste box. It opens your LinkedIn profile in a new tab with a helper panel for pasting your About and Experience sections.
+- Automatic DOM extraction was attempted first and abandoned: LinkedIn returns empty results for content that is visibly rendered on the page, so the guided paste flow is the reliable approach.
+- The panel now closes when the grab starts, and re-reads saved data each time it opens, so a save made in the LinkedIn tab is reflected without a page refresh.
+
+## 1.1.1
+
+- **Raised the analyze step's token limit from 2,500 to 4,000.** D1 logs showed every analyze call hitting exactly 2,500 output tokens — the ceiling, not a natural stopping point — so responses were being truncated on every run.
+- **Retries now escalate the token limit.** A retry after a `max_tokens` failure previously reused the same limit, guaranteeing the same failure. It now requests 50% more.
+
 ## 1.1.0
 
 - **Added a usage/diagnostics log to a Cloudflare D1 database.** Each call now logs its model, call type (analyze/assemble), selected PDF style, `stop_reason`, input/output token counts, and parse success/failure to D1 for later analysis. Only call metadata is logged — résumé content and job description text are never sent to the log. Requires a one-time D1 database + Worker binding setup (see README).
