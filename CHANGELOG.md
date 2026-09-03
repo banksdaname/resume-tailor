@@ -6,6 +6,10 @@
 - **Added a Stop button** to both the Tailor and Build steps. It appears only while a request is running and cancels it immediately. Stopping is treated as a deliberate action, not an error — no red error box.
 - **Added a 5-minute request timeout** so a dead request fails with an explanation instead of hanging indefinitely.
 - **Replaced opaque network errors with actionable ones.** A failed request previously surfaced the browser's raw "Failed to fetch". It now names the proxy URL and points at the Worker deployment as the thing to check.
+- **Added an Effort control** (below Model in Settings) with per-step settings. Effort governs how much the model thinks before answering; the API default is `high`, more than structured extraction needs. Three levels — Fast (`low`), Balanced (`medium`), Thorough (`high`) — with **Balanced as the default**, so runs are cheaper and faster out of the box. Tailor and Build can run at different levels, joined by a link toggle (solid bracket = linked, dashed = independent). If the API ever rejects the effort parameter, it's dropped for the session and the request retried without it.
+- **Roles now appear in the same order as your knowledge base source.** The assemble step is instructed to preserve the original role sequence rather than reordering by date or relevance.
+- **The Worker completes its D1 write after a client disconnects** via `ctx.waitUntil()`. Previously, stopping a run could terminate the Worker before the log was written — the run was still billed by Anthropic but left no record. Requires redeploying the Worker.
+- **The cost readout is marked as an estimate** (`~$0.247 est`), with a tooltip noting that stopped runs are excluded from the panel total but may still be billed, since cancelling closes the browser connection without stopping generation upstream — the D1 log is the accurate record.
 
 ## 1.6.0
 
