@@ -56,6 +56,45 @@ The script needs a URL it can POST to that forwards requests to Anthropic's API 
 
 That's it — the script now has a working path to Claude without your API key ever touching client-side code.
 
+To confirm the Worker is live, open its URL directly in your browser. You should see a short JSON listing the available models and `"workerVersion"`.
+
+## Updating from an earlier version
+
+### Updating to 1.8.0 (from 1.7.0 or earlier)
+
+1.8.0 moves the model list into your Worker, so there are **two pieces to update**. Do both. The order doesn't matter, and each keeps working with the other's old version in the meantime.
+
+**1. Update the Worker**
+1. In [dash.cloudflare.com](https://dash.cloudflare.com), go to **Workers & Pages** → your Résumé Tailor worker → **Edit code**.
+2. Select everything, delete it, and paste in the new [`cloudflare-worker-proxy.js`](./cloudflare-worker-proxy.js).
+3. Click **Deploy**.
+
+Your `ANTHROPIC_API_KEY` secret and `DB` binding are kept. Don't re-add them.
+
+**2. Update the userscript**
+1. Open the Tampermonkey dashboard → **Résumé Tailor** → **Editor**.
+2. Select everything, delete it, and paste in the new [`resume-tailor.user.js`](./resume-tailor.user.js).
+3. Save (Ctrl+S).
+
+**3. Check it worked**
+1. Reload any page, open the panel, and look at **Settings**. The note under **Model** should say *"Model list from your Worker (updated …)"* and the header should show **v1.8.0**.
+2. If it says *"Using the built-in short list"* instead, the Worker didn't deploy the new code. Open the Worker URL in your browser; you should see JSON with `"workerVersion": "1.8.0"`.
+
+Your settings, knowledge base, and proxy URL carry over. If your saved model has been retired from the list, it's switched automatically:
+
+| If you had | You now get |
+| --- | --- |
+| Opus 4.5 / 4.6 / 4.7 / 4.8 | Opus 5.5 |
+| Sonnet 4.6, Haiku 4.5 | Sonnet 5 |
+| Fable 5 | Fable 5.1 |
+| Opus 5, Sonnet 5 | unchanged (still offered) |
+
+### Future model updates
+
+From 1.8.0 on, adding, retiring, or re-pricing a model only means **updating the Worker** (step 1 above). The userscript picks up the new list the next time you open the panel. You'd only reinstall the userscript for new features, as the CHANGELOG notes.
+
+If you forked this repo, the list lives in the `MODEL_CONFIG` block at the top of `cloudflare-worker-proxy.js`. See [RELEASING.md](./RELEASING.md) for how to edit it.
+
 ## Setting up usage logging (optional)
 
 The script can log call metadata — model, token usage, success/failure, and similar diagnostics — to a Cloudflare D1 database. This is **optional**; without it, the script works exactly the same, just without a persistent log. Only metadata is logged, never résumé content or job description text.

@@ -17,7 +17,61 @@
  *    variable name to DB and select your resume_tailor_logdb database.
  * 4. Deploy, then copy the Worker's URL into the Résumé Tailor panel's
  *    Settings -> Proxy URL field.
+ *
+ * MODEL LIST: the userscript's model dropdown, cost estimates, and effort
+ * options all come from MODEL_CONFIG below (served on GET). To add, remove,
+ * or re-price a model, edit ONLY this block, bump `updated`, and redeploy —
+ * no userscript update needed. See RELEASING.md / the /model-watch command.
  */
+
+const WORKER_VERSION = '1.8.0';
+
+/* ==================== MODEL CONFIG (single source of truth) ====================
+ * models[]:
+ *   id            Anthropic API model ID
+ *   name          Short display name
+ *   note          Shown after the name in the dropdown
+ *   rates         USD per million tokens { input, output } — used for the cost estimate
+ *   efforts       Effort levels the model accepts ([] = model doesn't support effort)
+ *   defaultEffort What the API uses when effort is omitted (informational)
+ * replaced: models no longer offered → what to use instead. Applied to saved
+ *   settings in the userscript AND to incoming requests here, so an old
+ *   userscript still sending a retired ID keeps working.
+ * effortLevels: the levels shown in the panel, in order. `minMaxTokens` raises
+ *   the output ceiling for deep levels (Anthropic recommends >= 64k at
+ *   xhigh/max, since thinking and the answer share max_tokens).
+ * ============================================================================= */
+const MODEL_CONFIG = {
+  updated: '2026-09-24',
+  defaultModel: 'claude-opus-5-5',
+  models: [
+    { id: 'claude-sonnet-5',  name: 'Sonnet 5',   note: 'fast + budget (~10¢/run)',
+      rates: { input: 2, output: 10 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
+    { id: 'claude-opus-5-5',  name: 'Opus 5.5',   note: 'recommended (~20¢/run)',
+      rates: { input: 4, output: 20 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+    { id: 'claude-opus-5',    name: 'Opus 5',     note: 'previous Opus (~25¢/run)',
+      rates: { input: 5, output: 25 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
+    { id: 'claude-fable-5-1', name: 'Fable 5.1',  note: 'Mythos-class, most capable (~50¢/run)',
+      rates: { input: 10, output: 50 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
+  ],
+  replaced: {
+    'claude-fable-5': 'claude-fable-5-1',
+    'claude-opus-4-8': 'claude-opus-5-5',
+    'claude-opus-4-7': 'claude-opus-5-5',
+    'claude-opus-4-6': 'claude-opus-5-5',
+    'claude-opus-4-5': 'claude-opus-5-5',
+    'claude-sonnet-4-6': 'claude-sonnet-5',
+    'claude-haiku-4-5-20251001': 'claude-sonnet-5',
+  },
+  effortLevels: [
+    { id: 'low',    label: 'Fast' },
+    { id: 'medium', label: 'Balanced' },
+    { id: 'high',   label: 'Thorough' },
+    // To offer deeper levels, uncomment (all current models support them):
+    // { id: 'xhigh', label: 'Deep', minMaxTokens: 64000 },
+  ],
+};
+/* =========================== end MODEL CONFIG =========================== */
 
 export default {
   async fetch(request, env, ctx) {
@@ -26,8 +80,14 @@ export default {
       return new Response(null, { headers: corsHeaders() });
     }
 
+    // GET returns the model config for the userscript's Settings panel.
+    // No API key or D1 involved, so this works before the secret is set.
+    if (request.method === 'GET') {
+      return jsonResponse({ workerVersion: WORKER_VERSION, ...MODEL_CONFIG });
+    }
+
     if (request.method !== 'POST') {
-      return jsonResponse({ error: 'Only POST is supported' }, 405);
+      return jsonResponse({ error: 'Only GET and POST are supported' }, 405);
     }
 
     if (!env.ANTHROPIC_API_KEY) {
@@ -57,6 +117,7 @@ export default {
     const anthropicBody = { ...body };
     delete anthropicBody.call_type;
     delete anthropicBody.template;
+    normalizeRequest(anthropicBody);
 
     // The upstream call and the D1 write are bundled into one promise so it
     // can be registered with ctx.waitUntil(). Without that, a client that
@@ -110,6 +171,24 @@ export default {
   },
 };
 
+// Keeps requests valid as the lineup changes, including requests from older
+// userscripts that still have a hardcoded model list:
+//  - a replaced/retired model ID is swapped for its replacement
+//  - an effort level the model doesn't accept is dropped (API default applies)
+// Unknown model IDs pass through untouched so a brand-new model still works
+// before this config is updated.
+function normalizeRequest(body) {
+  if (MODEL_CONFIG.replaced[body.model]) {
+    body.model = MODEL_CONFIG.replaced[body.model];
+  }
+  const model = MODEL_CONFIG.models.find((m) => m.id === body.model);
+  const effort = body.output_config && body.output_config.effort;
+  if (model && effort && model.efforts.indexOf(effort) === -1) {
+    delete body.output_config.effort;
+    if (Object.keys(body.output_config).length === 0) { delete body.output_config; }
+  }
+}
+
 async function logRun(env, info) {
   if (!env.DB) { return; } // D1 binding not configured — skip silently
 
@@ -158,7 +237,7 @@ async function logRun(env, info) {
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'content-type',
   };
 }

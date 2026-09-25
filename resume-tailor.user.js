@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.7.0
+// @version      1.8.0
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
 // @author       banksdaname
 // @match        *://*/*
@@ -19,7 +19,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.7.0';
+  var SCRIPT_VERSION = '1.8.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -130,7 +130,7 @@
 
   var CFG = {
     proxyUrl: GM_getValue('rt_proxyUrl', ''),
-    model: GM_getValue('rt_model', 'claude-opus-5'),
+    model: GM_getValue('rt_model', 'claude-opus-5-5'),
     template: GM_getValue('rt_template', 'editorial'),
     // Effort controls how much the model thinks before answering. The API
     // default is 'high'; 'medium' is plenty for structured extraction like
@@ -140,39 +140,58 @@
     effortAssemble: GM_getValue('rt_effortAssemble', 'medium'),
     effortLinked: GM_getValue('rt_effortLinked', true),
   };
-  var EFFORTS = [
-    ['low', 'Fast'],
-    ['medium', 'Balanced'],
-    ['high', 'Thorough']
-  ];
   var KB = GM_getValue('rt_kb', null);
   if (typeof KB === 'string') { try { KB = JSON.parse(KB); } catch (e) { KB = null; } }
   var ANALYSIS = null, DECISIONS = null, LAST_RESUME = null, pdfText = '';
 
-  // Current Anthropic lineup as of July 2026. To add/retire a model, edit
-  // BOTH this list and MODEL_RATES below — they're kept in sync manually.
-  var MODELS = [
-    ['claude-sonnet-4-6', 'Sonnet 4.6 — budget (~15¢/run)'],
-    ['claude-sonnet-5', 'Sonnet 5 — fast + capable (~15¢/run)'],
-    ['claude-opus-4-7', 'Opus 4.7 — older Opus (~25¢/run)'],
-    ['claude-opus-4-8', 'Opus 4.8 — previous Opus (~25¢/run)'],
-    ['claude-opus-5', 'Opus 5 — recommended (~25¢/run)'],
-    ['claude-fable-5', 'Fable 5 — Mythos-class, most capable (~50¢/run)'],
-  ];
-  // Models removed from the dropdown but possibly still saved in a user's
-  // settings from an earlier version. Without this migration, `sel.value =
-  // CFG.model` would silently fail to match any <option>, leaving the
-  // dropdown blank and sending a retired model ID to the API.
-  var RETIRED_MODELS = ['claude-haiku-4-5-20251001', 'claude-opus-4-6', 'claude-opus-4-5'];
-  (function migrateRetiredModel() {
-    var stillOffered = MODELS.some(function(m) { return m[0] === CFG.model; });
-    if (!stillOffered) {
-      var wasRetired = RETIRED_MODELS.indexOf(CFG.model) !== -1;
-      CFG.model = 'claude-opus-5';
-      GM_setValue('rt_model', CFG.model);
-      if (wasRetired) { console.info('[Résumé Tailor] Your previously selected model was retired; switched to Opus 5.'); }
-    }
+  /* ============ model config ============
+     The model list, prices, and effort options live in ONE place: the
+     MODEL_CONFIG block in cloudflare-worker-proxy.js, served on GET. The
+     script fetches it when the panel opens and caches it, so adding or
+     re-pricing a model is a Worker redeploy — no script update needed.
+     FALLBACK_CONFIG is only used until a fetch succeeds (fresh install, or a
+     Worker older than 1.8.0 that doesn't serve the config yet); it's a
+     deliberately short list, not a second copy to keep in sync. */
+  var FALLBACK_CONFIG = {
+    updated: null,
+    defaultModel: 'claude-opus-5-5',
+    models: [
+      { id: 'claude-opus-5-5', name: 'Opus 5.5', note: 'recommended', rates: { input: 4, output: 20 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { id: 'claude-sonnet-5', name: 'Sonnet 5', note: 'fast + budget', rates: { input: 2, output: 10 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }
+    ],
+    replaced: {},
+    effortLevels: [{ id: 'low', label: 'Fast' }, { id: 'medium', label: 'Balanced' }, { id: 'high', label: 'Thorough' }]
+  };
+  // Where the active config came from: 'worker' (fresh this session),
+  // 'cache' (last good fetch), or 'fallback'.
+  var modelConfigSource = 'fallback';
+  var MODEL_CONFIG = (function() {
+    var cached = GM_getValue('rt_modelConfig', null);
+    if (typeof cached === 'string') { try { cached = JSON.parse(cached); } catch (e) { cached = null; } }
+    if (isValidModelConfig(cached)) { modelConfigSource = 'cache'; return cached; }
+    return FALLBACK_CONFIG;
   })();
+  function isValidModelConfig(c) {
+    return !!(c && Array.isArray(c.models) && c.models.length && c.defaultModel && Array.isArray(c.effortLevels));
+  }
+  function findModel(id) {
+    for (var i = 0; i < MODEL_CONFIG.models.length; i++) { if (MODEL_CONFIG.models[i].id === id) { return MODEL_CONFIG.models[i]; } }
+    return null;
+  }
+  // A saved model that's no longer offered would leave the dropdown blank
+  // and send a dead ID to the API. Move it to its listed replacement, or to
+  // the default. Runs at startup and again whenever a new config arrives.
+  // Skipped on the fallback list: it's intentionally short, so a saved model
+  // missing from it isn't evidence the model is gone.
+  function migrateSavedModel() {
+    if (modelConfigSource === 'fallback' || findModel(CFG.model)) { return; }
+    var repl = (MODEL_CONFIG.replaced || {})[CFG.model];
+    var next = (repl && findModel(repl)) ? repl : MODEL_CONFIG.defaultModel;
+    console.info('[Résumé Tailor] Model ' + CFG.model + ' is no longer offered; switched to ' + next + '.');
+    CFG.model = next;
+    GM_setValue('rt_model', CFG.model);
+  }
+  migrateSavedModel();
 
   var esc = function(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
 
@@ -244,6 +263,8 @@
     #rt-root .seg .chip:hover{color:#1c2230}
     #rt-root .seg .chip.on-ok{background:#3b4cca;color:#fff;box-shadow:0 1px 2px rgba(59,76,202,.25)}
     #rt-root .seg .chip.on-skip{background:#fff;color:#6b7280;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+    #rt-root .seg .chip.dis{opacity:.35;cursor:not-allowed}
+    #rt-root .seg .chip.dis:hover{color:#6b7280}
     #rt-root .chip{border:1px solid #e6e8ee;background:#fff;border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-right:6px;margin-top:7px;display:inline-block}
     #rt-root .chip.on-ok{background:#e9f7ef;border-color:#bfe6cd;color:#16a34a}
     #rt-root .chip.on-skip{background:#f0f1f4;color:#9aa0ab}
@@ -369,17 +390,13 @@
   var modelSel = mk('select', { id: 'rt-model' });
   var templateSel = mk('select', { id: 'rt-template' });
   // ---- Effort: two linked segmented controls ----
+  // Chips are filled in by buildEffortChips() from the model config, since
+  // the offered levels can change when a new config arrives.
   function mkEffortRow(stepKey, labelTxt) {
     var row = mk('div', { cls: 'eff-row' });
     var lbl = mk('span', { cls: 'eff-label' }); lbl.textContent = labelTxt;
     var seg = mk('div', { cls: 'seg' });
-    EFFORTS.forEach(function(e) {
-      var chip = mk('span', { cls: 'chip' });
-      chip.textContent = e[1];
-      chip.dataset.effStep = stepKey;
-      chip.dataset.effVal = e[0];
-      seg.appendChild(chip);
-    });
+    seg.dataset.effSeg = stepKey;
     row.appendChild(lbl); row.appendChild(seg);
     return row;
   }
@@ -401,7 +418,7 @@
     ap(mk('h2'), document.createTextNode('\u2699\uFE0F Settings')),
     ap(mk('p', { cls: 'desc' }), document.createTextNode('One-time setup. Your API key stays in your Cloudflare Worker.')),
     mkField('Proxy URL', proxyInp),
-    mkField('Model', modelSel),
+    mkField('Model', modelSel, mkNote('rt-modelNote')),
     mkField('Effort', effPair, effNote),
     mkField('PDF style', templateSel, templatePreviewRow),
     mkBtn('primary', 'rt-saveCfg', 'Save settings'),
@@ -511,12 +528,53 @@
 
   function rt$(id) { return root.querySelector('#' + id); }
   var sel = rt$('rt-model');
-  MODELS.forEach(function(m) {
-    var o = document.createElement('option');
-    o.value = m[0];
-    o.textContent = m[1];
-    sel.appendChild(o);
-  });
+  // (Re)builds the model dropdown from MODEL_CONFIG. A saved model the list
+  // doesn't include (possible only on the short fallback list) gets its own
+  // option so the selector never shows blank.
+  function buildModelOptions() {
+    clearEl(sel);
+    var list = MODEL_CONFIG.models.slice();
+    if (!findModel(CFG.model)) { list.push({ id: CFG.model, name: CFG.model, note: 'saved choice' }); }
+    list.forEach(function(m) {
+      var o = document.createElement('option');
+      o.value = m.id;
+      o.textContent = m.name + (m.note ? ' — ' + m.note : '');
+      sel.appendChild(o);
+    });
+    sel.value = CFG.model;
+  }
+  function renderModelNote() {
+    var el = rt$('rt-modelNote');
+    if (!el) { return; }
+    if (modelConfigSource === 'fallback') {
+      el.textContent = !CFG.proxyUrl
+        ? 'Showing a starter list. Save your Proxy URL to load the full, current model list.'
+        : 'Using the built-in short list. Redeploy your Worker from the latest release to get the full, current model list.';
+    } else {
+      el.textContent = 'Model list from your Worker' + (MODEL_CONFIG.updated ? ' (updated ' + MODEL_CONFIG.updated + ')' : '') + '.';
+    }
+  }
+  // Fetches the current config from the Worker (GET). Fails quietly: an old
+  // Worker answers 405, and the cached or fallback list keeps working.
+  function refreshModelConfig() {
+    if (!CFG.proxyUrl) { return Promise.resolve(false); }
+    var url = CFG.proxyUrl.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(url)) { url = 'https://' + url; }
+    return fetch(url, { method: 'GET' }).then(function(res) {
+      return res.ok ? res.json() : null;
+    }).then(function(cfg) {
+      if (!isValidModelConfig(cfg)) { return false; }
+      MODEL_CONFIG = cfg;
+      modelConfigSource = 'worker';
+      GM_setValue('rt_modelConfig', JSON.stringify(cfg));
+      migrateSavedModel();
+      buildModelOptions();
+      buildEffortChips();
+      renderEffort();
+      renderModelNote();
+      return true;
+    }).catch(function() { return false; });
+  }
 
   /* ============ pill state machine ============
      State A (faded): low-opacity dot, only "RT" visible, no X shown.
@@ -747,7 +805,12 @@
     if (typeof fresh === 'string') { try { fresh = JSON.parse(fresh); } catch(e) { fresh = null; } }
     if (fresh) { KB = fresh; }
     rt$('rt-proxy').value = CFG.proxyUrl;
-    sel.value = CFG.model;
+    buildModelOptions();
+    renderModelNote();
+    buildEffortChips();
+    // Pull the latest model list once per page load (and again after saving
+    // settings). The cached list renders immediately; this updates it in place.
+    if (modelConfigSource !== 'worker') { refreshModelConfig(); }
     var tplSel = rt$('rt-template');
     if (!tplSel.options.length) {
       Object.keys(TEMPLATES).forEach(function(id) {
@@ -770,9 +833,47 @@
 
   /* ============ settings ============ */
   /* ============ effort control ============ */
+  function effortLevel(val) {
+    var lv = MODEL_CONFIG.effortLevels;
+    for (var i = 0; i < lv.length; i++) { if (lv[i].id === val) { return lv[i]; } }
+    return null;
+  }
   function effortLabel(val) {
-    for (var i = 0; i < EFFORTS.length; i++) { if (EFFORTS[i][0] === val) { return EFFORTS[i][1]; } }
-    return val;
+    var lv = effortLevel(val);
+    return lv ? lv.label : val;
+  }
+  // Levels the currently selected model accepts, among those the panel offers.
+  // A model missing from the config (e.g. a saved choice on the fallback
+  // list) is assumed to accept all offered levels.
+  function supportedEfforts(modelId) {
+    var m = findModel(modelId);
+    return MODEL_CONFIG.effortLevels.map(function(l) { return l.id; }).filter(function(id) {
+      return !m || !Array.isArray(m.efforts) || m.efforts.indexOf(id) !== -1;
+    });
+  }
+  // The effort actually sent for a step, or null to omit output_config.
+  // Falls back to the nearest supported level rather than sending one the
+  // model would reject.
+  function effectiveEffort(step, modelId) {
+    var want = step === 'assemble' ? CFG.effortAssemble : CFG.effortAnalyze;
+    var ok = supportedEfforts(modelId);
+    if (!ok.length) { return null; }
+    if (ok.indexOf(want) !== -1) { return want; }
+    return ok.indexOf('medium') !== -1 ? 'medium' : ok[0];
+  }
+  function buildEffortChips() {
+    var pair = rt$('rt-effPair');
+    if (!pair) { return; }
+    Array.prototype.forEach.call(pair.querySelectorAll('[data-eff-seg]'), function(seg) {
+      clearEl(seg);
+      MODEL_CONFIG.effortLevels.forEach(function(l) {
+        var chip = mk('span', { cls: 'chip' });
+        chip.textContent = l.label;
+        chip.dataset.effStep = seg.dataset.effSeg;
+        chip.dataset.effVal = l.id;
+        seg.appendChild(chip);
+      });
+    });
   }
   function renderEffort() {
     var pair = rt$('rt-effPair');
@@ -782,14 +883,22 @@
     rt$('rt-effLink').title = CFG.effortLinked
       ? 'Linked \u2014 both steps use the same effort. Click to set them separately.'
       : 'Separate \u2014 each step has its own effort. Click to link them.';
+    var modelId = sel.value || CFG.model;
+    var ok = supportedEfforts(modelId);
     Array.prototype.forEach.call(pair.querySelectorAll('[data-eff-val]'), function(chip) {
-      var current = chip.dataset.effStep === 'analyze' ? CFG.effortAnalyze : CFG.effortAssemble;
-      chip.className = 'chip' + (chip.dataset.effVal === current ? ' on-ok' : '');
+      var current = effectiveEffort(chip.dataset.effStep, modelId);
+      var dis = ok.indexOf(chip.dataset.effVal) === -1;
+      chip.className = 'chip' + (chip.dataset.effVal === current ? ' on-ok' : '') + (dis ? ' dis' : '');
+      chip.title = dis ? 'Not supported by this model' : '';
     });
-    rt$('rt-effNote').textContent = CFG.effortLinked
-      ? 'Both steps run at ' + effortLabel(CFG.effortAnalyze) + '. Lower effort is faster and cheaper.'
-      : 'Tailor: ' + effortLabel(CFG.effortAnalyze) + ' \u00B7 Build: ' + effortLabel(CFG.effortAssemble) + '.';
+    var a = effectiveEffort('analyze', modelId), b = effectiveEffort('assemble', modelId);
+    rt$('rt-effNote').textContent = !ok.length
+      ? 'This model doesn\u2019t support effort \u2014 it will use its built-in default.'
+      : CFG.effortLinked
+        ? 'Both steps run at ' + effortLabel(a) + '. Lower effort is faster and cheaper.'
+        : 'Tailor: ' + effortLabel(a) + ' \u00B7 Build: ' + effortLabel(b) + '.';
   }
+  sel.addEventListener('change', renderEffort);
   rt$('rt-effPair').addEventListener('click', function(e) {
     var link = e.target.closest('#rt-effLink');
     if (link) {
@@ -801,7 +910,7 @@
       return;
     }
     var chip = e.target.closest('[data-eff-val]');
-    if (!chip) { return; }
+    if (!chip || chip.classList.contains('dis')) { return; }
     var val = chip.dataset.effVal;
     if (CFG.effortLinked) { CFG.effortAnalyze = val; CFG.effortAssemble = val; }
     else if (chip.dataset.effStep === 'analyze') { CFG.effortAnalyze = val; }
@@ -821,6 +930,8 @@
     GM_setValue('rt_effortLinked', CFG.effortLinked);
     rt$('rt-cfgMsg').textContent = ' Saved \u2713';
     setTimeout(function() { rt$('rt-cfgMsg').textContent = ''; }, 2000);
+    // The proxy URL may have just been set or changed \u2014 fetch its model list.
+    refreshModelConfig();
     // If a résumé was already built, refresh the preview + Step 3 explainer
     // to reflect the newly selected template immediately, rather than
     // leaving a stale preview until the next "Build my résumé" run.
@@ -1165,6 +1276,10 @@
     if (!CFG.proxyUrl) { return Promise.reject(new Error('Set your Proxy URL in Settings first.')); }
     var url = CFG.proxyUrl.trim().replace(/\/+$/, '');
     if (!/^https?:\/\//i.test(url)) { url = 'https://' + url; }
+    var effort = effortParamSupported ? effectiveEffort(callType === 'assemble' ? 'assemble' : 'analyze', CFG.model) : null;
+    // Deep effort levels need more output room (thinking + answer share it).
+    var lvl = effort ? effortLevel(effort) : null;
+    if (lvl && lvl.minMaxTokens && (maxTok || 0) < lvl.minMaxTokens) { maxTok = lvl.minMaxTokens; }
     var timedOut = false;
     var timer = setTimeout(function() { timedOut = true; abortActiveRequest(); }, REQUEST_TIMEOUT_MS);
     return fetch(url, {
@@ -1175,11 +1290,10 @@
         model: CFG.model, max_tokens: maxTok || 2500, system: system, messages: [{ role: 'user', content: user }],
         // Effort controls thinking depth. Wire format per Anthropic's docs:
         // a top-level output_config object. Chosen per step so Tailor and
-        // Build can run at different depths. Omitted entirely if the API
-        // ever rejected it earlier this session (see effortParamSupported).
-        output_config: effortParamSupported
-          ? { effort: (callType === 'assemble' ? CFG.effortAssemble : CFG.effortAnalyze) }
-          : undefined,
+        // Build can run at different depths, limited to levels the model
+        // supports (see effectiveEffort). Omitted if the model has no effort
+        // support, or if the API rejected it earlier this session.
+        output_config: effort ? { effort: effort } : undefined,
         // Logging-only context for the Worker's D1 log — stripped before
         // the Worker forwards the request to Anthropic's actual API.
         call_type: callType || 'unknown', template: CFG.template
@@ -1191,7 +1305,7 @@
       // readable — the raw versions are "AbortError" and "Failed to fetch".
       if (netErr && netErr.name === 'AbortError') {
         throw new Error(timedOut
-          ? 'Timed out after ' + Math.round(REQUEST_TIMEOUT_MS / 60000) + ' minutes. Thinking-enabled models (Opus 5, Sonnet 5) can be slow on long r\u00E9sum\u00E9s \u2014 try a smaller job description, or switch to Sonnet 4.6.'
+          ? 'Timed out after ' + Math.round(REQUEST_TIMEOUT_MS / 60000) + ' minutes. Thinking models can be slow on long r\u00E9sum\u00E9s \u2014 try a lower Effort, a smaller job description, or a faster model.'
           : 'Stopped.');
       }
       throw new Error('Could not reach your proxy (' + url + '). Check that the Worker is deployed and the URL in Settings is correct, then try again.');
@@ -1221,10 +1335,18 @@
       }
       return res.json();
     }).then(function(data) {
-      var text = (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('\n');
       var inputTokens = (data.usage && data.usage.input_tokens) || 0;
       var outputTokens = (data.usage && data.usage.output_tokens) || 0;
-      recordRunCost(CFG.model, inputTokens, outputTokens);
+      // Price by the model that actually ran — the Worker may have swapped
+      // a retired ID for its replacement.
+      recordRunCost(data.model || CFG.model, inputTokens, outputTokens);
+      // Newer models (Opus 5.5, Fable) can decline a request outright. The
+      // response then has no usable text, so say so plainly instead of
+      // letting it surface as a confusing JSON parse error.
+      if (data.stop_reason === 'refusal') {
+        throw new Error('The model declined this request. Résumé tailoring rarely triggers this — try again, or pick a different model in Settings.');
+      }
+      var text = (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('\n');
       return {
         text: text,
         stopReason: data.stop_reason || null,
@@ -1249,26 +1371,14 @@
     });
   }
 
-  // Per-million-token USD rates. Anthropic's published rates as of July 2026;
-  // update here whenever pricing changes. Unrecognized models fall back to
-  // the Sonnet rate as a reasonable middle-ground estimate rather than
+  // Per-million-token USD rates come from the model config (see top of the
+  // script / the Worker's MODEL_CONFIG). A model not in the config falls
+  // back to the default model's rate as a reasonable estimate rather than
   // silently showing nothing.
-  // Sonnet 5 note: Anthropic is running introductory pricing of $2/$10
-  // through Aug 31 2026, after which it becomes $3/$15. We encode the
-  // standard rate so the estimate never *under*-reports once the intro
-  // window closes — during the intro period the real cost is lower than
-  // shown, which is the safer direction to be wrong in.
-  var MODEL_RATES = {
-    'claude-sonnet-4-6': { input: 3, output: 15 },
-    'claude-sonnet-5':   { input: 3, output: 15 },
-    'claude-opus-4-7':   { input: 5, output: 25 },
-    'claude-opus-4-8':   { input: 5, output: 25 },
-    'claude-opus-5':     { input: 5, output: 25 },
-    'claude-fable-5':    { input: 10, output: 50 }
-  };
   var sessionCostTotal = 0;
   function estimateCost(model, inputTokens, outputTokens) {
-    var rates = MODEL_RATES[model] || MODEL_RATES['claude-sonnet-4-6'];
+    var m = findModel(model) || findModel(MODEL_CONFIG.defaultModel) || MODEL_CONFIG.models[0];
+    var rates = (m && m.rates) || { input: 0, output: 0 };
     return (inputTokens / 1e6) * rates.input + (outputTokens / 1e6) * rates.output;
   }
   function recordRunCost(model, inputTokens, outputTokens) {

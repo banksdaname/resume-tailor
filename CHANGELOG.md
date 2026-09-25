@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0
+
+**Update both the Worker and the userscript** — see "Updating from an earlier version" in the README.
+
+- **The model list now lives in the Worker.** Model IDs, display names, prices, supported effort levels, and the default model are defined once in `MODEL_CONFIG` at the top of `cloudflare-worker-proxy.js`, served on `GET`. The userscript fetches and caches it when the panel opens. Future model additions, retirements, and price changes need only a Worker redeploy, not a userscript update. A note under **Model** in Settings shows where the list came from.
+- **Refreshed the lineup.** Added **Opus 5.5** (new default, $4/$20) and **Fable 5.1**. Current options: Sonnet 5, Opus 5.5, Opus 5, Fable 5.1. Sonnet 5 is now priced at its $2/$10 standard rate. Retired choices are switched automatically: Opus 4.x → Opus 5.5, Sonnet 4.6 and Haiku 4.5 → Sonnet 5, Fable 5 → Fable 5.1.
+- **The Worker keeps older userscripts working.** It swaps retired model IDs for their replacements and drops effort levels a model doesn't accept, so a stale client can't send a request the API rejects.
+- **Effort is model-aware.** Levels the selected model doesn't support are greyed out, the nearest supported level is sent instead, and effort is omitted for models without it. Deeper levels (`xhigh`) can be enabled from the config and raise the output-token ceiling automatically.
+- **Clear message when a model declines a request.** Newer models can return `stop_reason: "refusal"`, which previously surfaced as a confusing JSON parse error and a wasted retry.
+- The cost estimate now prices by the model that actually ran.
+
 ## 1.7.0
 
 - **Fixed runs failing on Opus 5 ("Failed to fetch").** Opus 5 and Sonnet 5 run with thinking on by default at high effort, and thinking tokens are drawn from the same `max_tokens` budget as the response. The previous ceilings (4,000 analyze / 6,000 assemble) left almost no room for the actual JSON after thinking. Raised to 16,000 and 24,000, matching Anthropic's guidance of at least 16K for calls at high effort. `max_tokens` is a ceiling rather than a reservation, so raising it costs nothing on its own.
