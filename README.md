@@ -60,6 +60,14 @@ To confirm the Worker is live, open its URL directly in your browser. You should
 
 ## Updating from an earlier version
 
+### Updating to 1.8.1
+
+1.8.1 is a userscript-only change: it adds `@updateURL`/`@downloadURL` to the header. **This is the last time you paste the userscript in by hand.** Open the Tampermonkey dashboard → **Résumé Tailor** → **Editor**, replace everything with the new [`resume-tailor.user.js`](./resume-tailor.user.js), and save.
+
+From then on, Tampermonkey checks GitHub `main` on its normal schedule and offers each new release automatically — no more copy-paste. (You can force a check any time from the Tampermonkey dashboard's **Last updated** column.) The Worker still isn't affected by this; it's deployed separately with `npx wrangler deploy`.
+
+**Forks:** the update URLs point at `banksdaname/resume-tailor`. If you've forked, repoint `@updateURL` and `@downloadURL` at your own repo, or Tampermonkey will pull upstream's copy over yours.
+
 ### Updating to 1.8.0 (from 1.7.0 or earlier)
 
 1.8.0 moves the model list into your Worker, so there are **two pieces to update**. Do both. The order doesn't matter, and each keeps working with the other's old version in the meantime.

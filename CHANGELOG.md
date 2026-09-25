@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8.1
+
+- **Tampermonkey now auto-updates the userscript.** Added `@updateURL`/`@downloadURL` pointing at `main` on GitHub, so once this version is installed, future userscript releases arrive automatically after a push to `main` — no more pasting into the Tampermonkey editor. Forks should repoint these at their own repo.
+
 ## 1.8.0
 
 **Update both the Worker and the userscript** — see "Updating from an earlier version" in the README.

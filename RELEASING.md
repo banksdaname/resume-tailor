@@ -35,7 +35,8 @@ If the config changed, the Worker must be redeployed (see step 2's last item).
 - [ ] If working outside the repo folder: copy the changed files into `~/resume-tailor`, replacing the old ones (watch for browser `(1)` suffixes). Not needed when working in Claude Code from `~/resume-tailor`.
 - [ ] Verify with `grep "@version" resume-tailor.user.js` before committing.
 - [ ] `git add . && git commit && git push`, then tag: `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`.
-- [ ] If `cloudflare-worker-proxy.js` changed, redeploy it in the Cloudflare dashboard — GitHub and Cloudflare do NOT sync.
+- [ ] The pushed userscript reaches installed copies automatically — Tampermonkey polls the `@updateURL` on `main` and offers the update. No manual paste needed.
+- [ ] If `cloudflare-worker-proxy.js` changed, redeploy it from the repo folder with `npx wrangler deploy` (config lives in `wrangler.toml`). GitHub and Cloudflare do NOT sync, so a push alone does not update the Worker.
 
 ## 3. Auth reminder
 

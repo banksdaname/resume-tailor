@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.8.0
+// @version      1.8.1
+// @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
+// @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
 // @author       banksdaname
 // @match        *://*/*
@@ -19,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.8.0';
+  var SCRIPT_VERSION = '1.8.1';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).

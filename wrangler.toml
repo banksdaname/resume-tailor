@@ -1,0 +1,8 @@
+name = "remote-tailor"
+main = "cloudflare-worker-proxy.js"
+compatibility_date = "2026-09-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "resume_tailor_logdb"
+database_id = "9f0df353-6a37-478a-a9df-ee08a3de95dc"
