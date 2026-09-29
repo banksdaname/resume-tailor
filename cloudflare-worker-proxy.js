@@ -24,7 +24,7 @@
  * no userscript update needed. See RELEASING.md / the /model-watch command.
  */
 
-const WORKER_VERSION = '1.8.0';
+const WORKER_VERSION = '1.8.2';
 
 /* ==================== MODEL CONFIG (single source of truth) ====================
  * models[]:
@@ -42,26 +42,27 @@ const WORKER_VERSION = '1.8.0';
  *   xhigh/max, since thinking and the answer share max_tokens).
  * ============================================================================= */
 const MODEL_CONFIG = {
-  updated: '2026-09-24',
+  updated: '2026-09-29',
   defaultModel: 'claude-opus-5-5',
   models: [
-    { id: 'claude-sonnet-5',  name: 'Sonnet 5',   note: 'fast + budget (~10¢/run)',
+    { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', note: 'fastest + cheapest (~5¢/run)',
+      rates: { input: 1, output: 5 },   efforts: [], defaultEffort: null },
+    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', note: 'fast + budget (~10¢/run)',
       rates: { input: 2, output: 10 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
     { id: 'claude-opus-5-5',  name: 'Opus 5.5',   note: 'recommended (~20¢/run)',
       rates: { input: 4, output: 20 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
-    { id: 'claude-opus-5',    name: 'Opus 5',     note: 'previous Opus (~25¢/run)',
-      rates: { input: 5, output: 25 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
     { id: 'claude-fable-5-1', name: 'Fable 5.1',  note: 'Mythos-class, most capable (~50¢/run)',
       rates: { input: 10, output: 50 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
   ],
   replaced: {
+    'claude-sonnet-5': 'claude-sonnet-5-5',
+    'claude-opus-5': 'claude-opus-5-5',
     'claude-fable-5': 'claude-fable-5-1',
     'claude-opus-4-8': 'claude-opus-5-5',
     'claude-opus-4-7': 'claude-opus-5-5',
     'claude-opus-4-6': 'claude-opus-5-5',
     'claude-opus-4-5': 'claude-opus-5-5',
-    'claude-sonnet-4-6': 'claude-sonnet-5',
-    'claude-haiku-4-5-20251001': 'claude-sonnet-5',
+    'claude-sonnet-4-6': 'claude-sonnet-5-5',
   },
   effortLevels: [
     { id: 'low',    label: 'Fast' },

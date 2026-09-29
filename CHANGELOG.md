@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.2 (Worker only)
+
+**Redeploy the Worker** (`npx wrangler deploy`). No userscript update needed.
+
+- **Model lineup now matches Anthropic's current four:** Haiku 4.5 ($1/$5, no effort control), Sonnet 5.5 ($2/$10, released 2026-09-28), Opus 5.5 (default), Fable 5.1.
+- Sonnet 5 → Sonnet 5.5 and Opus 5 → Opus 5.5 are switched automatically for saved settings and older userscripts. Sonnet 4.6 now maps to Sonnet 5.5. Haiku 4.5 is offered again instead of mapping to Sonnet.
+
 ## 1.8.1
 
 - **Tampermonkey now auto-updates the userscript.** Added `@updateURL`/`@downloadURL` pointing at `main` on GitHub, so once this version is installed, future userscript releases arrive automatically after a push to `main` — no more pasting into the Tampermonkey editor. Forks should repoint these at their own repo.
