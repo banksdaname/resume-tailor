@@ -40,5 +40,6 @@ If the config changed, the Worker must be redeployed (see step 2's last item).
 
 ## 3. Auth reminder
 
-If `git push` fails with `403 / denied to audbanks`, the `gh` CLI reverted
-accounts. Run `gh auth status`; if it's not `banksdaname`, `gh auth switch -u banksdaname` and retry.
+If `git push` fails with a 403, the `gh` CLI may be signed in as a different
+account. Run `gh auth status`, switch to the account that owns the repo with
+`gh auth switch -u <account>`, and retry.

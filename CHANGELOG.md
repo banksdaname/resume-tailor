@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.0
+
+**Update both the userscript and the Worker, in that order** — see "Updating to 1.9.0" in the README.
+
+- **The Worker now requires a proxy token.** Add a `PROXY_TOKEN` secret to the Worker and enter the same value under **Settings → Proxy token**. Without it, anyone who found your Worker URL could run requests on your API key.
+- **The Worker only forwards what the app needs:** models in its list, `max_tokens` capped at 64,000, and only the `model`, `max_tokens`, `system`, `messages` and `output_config` fields.
+- A wrong or missing token shows a clear message instead of a raw API error.
+- Docs and license no longer name individual accounts.
+
 ## 1.8.2 (Worker only)
 
 **Redeploy the Worker** (`npx wrangler deploy`). No userscript update needed.

@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.8.1
+// @version      1.9.0
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
-// @author       banksdaname
+// @author       Résumé Tailor contributors
 // @match        *://*/*
 // @exclude-match chrome-extension://*/*
 // @exclude-match moz-extension://*/*
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.8.1';
+  var SCRIPT_VERSION = '1.9.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -132,6 +132,8 @@
 
   var CFG = {
     proxyUrl: GM_getValue('rt_proxyUrl', ''),
+    // Shared secret the Worker checks, so only you can spend your API key.
+    proxyToken: GM_getValue('rt_proxyToken', ''),
     model: GM_getValue('rt_model', 'claude-opus-5-5'),
     template: GM_getValue('rt_template', 'editorial'),
     // Effort controls how much the model thinks before answering. The API
@@ -389,6 +391,8 @@
 
   // Settings card
   var proxyInp = mkInp('text', 'rt-proxy', 'https://name.account.workers.dev');
+  var proxyTokInp = mkInp('password', 'rt-proxyToken', 'Same value as the Worker’s PROXY_TOKEN secret');
+  proxyTokInp.autocomplete = 'off';
   var modelSel = mk('select', { id: 'rt-model' });
   var templateSel = mk('select', { id: 'rt-template' });
   // ---- Effort: two linked segmented controls ----
@@ -420,6 +424,7 @@
     ap(mk('h2'), document.createTextNode('\u2699\uFE0F Settings')),
     ap(mk('p', { cls: 'desc' }), document.createTextNode('One-time setup. Your API key stays in your Cloudflare Worker.')),
     mkField('Proxy URL', proxyInp),
+    mkField('Proxy token', proxyTokInp),
     mkField('Model', modelSel, mkNote('rt-modelNote')),
     mkField('Effort', effPair, effNote),
     mkField('PDF style', templateSel, templatePreviewRow),
@@ -807,6 +812,7 @@
     if (typeof fresh === 'string') { try { fresh = JSON.parse(fresh); } catch(e) { fresh = null; } }
     if (fresh) { KB = fresh; }
     rt$('rt-proxy').value = CFG.proxyUrl;
+    rt$('rt-proxyToken').value = CFG.proxyToken;
     buildModelOptions();
     renderModelNote();
     buildEffortChips();
@@ -922,9 +928,11 @@
 
   rt$('rt-saveCfg').addEventListener('click', function() {
     CFG.proxyUrl = rt$('rt-proxy').value.trim();
+    CFG.proxyToken = rt$('rt-proxyToken').value.trim();
     CFG.model = sel.value;
     CFG.template = rt$('rt-template').value || 'editorial';
     GM_setValue('rt_proxyUrl', CFG.proxyUrl);
+    GM_setValue('rt_proxyToken', CFG.proxyToken);
     GM_setValue('rt_model', CFG.model);
     GM_setValue('rt_template', CFG.template);
     GM_setValue('rt_effortAnalyze', CFG.effortAnalyze);
@@ -1286,7 +1294,7 @@
     var timer = setTimeout(function() { timedOut = true; abortActiveRequest(); }, REQUEST_TIMEOUT_MS);
     return fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-proxy-token': CFG.proxyToken || '' },
       signal: activeAbort ? activeAbort.signal : undefined,
       body: JSON.stringify({
         model: CFG.model, max_tokens: maxTok || 2500, system: system, messages: [{ role: 'user', content: user }],
@@ -1313,6 +1321,9 @@
       throw new Error('Could not reach your proxy (' + url + '). Check that the Worker is deployed and the URL in Settings is correct, then try again.');
     }).then(function(res) {
       clearTimeout(timer);
+      if (res.status === 401) {
+        throw new Error('Your Worker rejected the proxy token. Enter the same value as the Worker’s PROXY_TOKEN secret under Settings → Proxy token, then save.');
+      }
       if (res.status === 400 && effortParamSupported) {
         return res.text().then(function(detail) {
           if (/output_config|effort/i.test(detail)) {

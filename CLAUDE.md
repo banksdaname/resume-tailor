@@ -23,7 +23,7 @@ using raw `fetch` (no SDK). The Worker also logs call metadata to Cloudflare D1.
   ```
   node -e 'const f=require("fs");new Function(f.readFileSync("resume-tailor.user.js","utf8").replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/,""));new Function(f.readFileSync("cloudflare-worker-proxy.js","utf8").replace("export default","var _w ="));console.log("OK")'
   ```
-- Before any push: `gh auth status` must show `banksdaname`. If not, `gh auth switch -u banksdaname`. The old `audbanks` account causes 403s.
+- Before any push: check `gh auth status` shows the account that owns the repo. Maintainer-specific account rules go in `CLAUDE.local.md` (git-ignored).
 - GitHub and Cloudflare don't sync. If the Worker changed, redeploy it from the repo folder with `npx wrangler deploy` (config in `wrangler.toml`, D1 `DB` binding included). A push to GitHub does not update the Worker.
 - Userscript releases reach installed copies automatically: the header's `@updateURL`/`@downloadURL` point at `resume-tailor.user.js` on `main`, so Tampermonkey picks up a new `@version` after a push — no manual paste.
 - D1 console: no inline `--` SQL comments (they cause "incomplete input").

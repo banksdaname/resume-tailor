@@ -51,8 +51,9 @@ The script needs a URL it can POST to that forwards requests to Anthropic's API 
 2. Go to **Workers & Pages** → **Create** → **Create Worker**. Give it any name (e.g. `resume-tailor-proxy`) and deploy the default template.
 3. Click **Edit code** and replace everything with the contents of [`cloudflare-worker-proxy.js`](./cloudflare-worker-proxy.js) from this repo.
 4. Go to the Worker's **Settings → Variables and Secrets**, and add a secret named `ANTHROPIC_API_KEY` with your API key as the value. Keeping it as a secret (not a plaintext variable) means it's encrypted and never shown again in the dashboard.
-5. Deploy. Copy the Worker's URL — it'll look like `https://resume-tailor-proxy.<your-subdomain>.workers.dev`.
-6. Open the Résumé Tailor panel in your browser, go to **Settings**, paste that URL into **Proxy URL**, pick a model, and click **Save settings**.
+5. In the same place, add a second secret named `PROXY_TOKEN`. Use a long random value, for example the output of `openssl rand -hex 32` or a password manager's generator. The Worker refuses requests that don't send this value, so nobody who finds your Worker URL can spend your API key.
+6. Deploy. Copy the Worker's URL — it'll look like `https://resume-tailor-proxy.<your-subdomain>.workers.dev`.
+7. Open the Résumé Tailor panel in your browser, go to **Settings**, paste that URL into **Proxy URL** and your `PROXY_TOKEN` value into **Proxy token**, pick a model, and click **Save settings**.
 
 That's it — the script now has a working path to Claude without your API key ever touching client-side code.
 
@@ -60,13 +61,24 @@ To confirm the Worker is live, open its URL directly in your browser. You should
 
 ## Updating from an earlier version
 
+### Updating to 1.9.0
+
+1.9.0 locks your Worker with a shared secret. Do these steps **in this order**, or tailoring stops working until you finish:
+
+1. **Update the userscript.** Tampermonkey offers it automatically, or force a check from the dashboard's **Last updated** column. The Settings card then shows a new **Proxy token** field.
+2. **Add the secret.** In your Worker's **Settings → Variables and Secrets**, add a secret named `PROXY_TOKEN` with a long random value (for example `openssl rand -hex 32`).
+3. **Update the Worker.** Paste in the new [`cloudflare-worker-proxy.js`](./cloudflare-worker-proxy.js) and deploy (or `npx wrangler deploy`).
+4. **Enter the token.** In the panel, paste the same value into **Settings → Proxy token** and click **Save settings**.
+
+The Worker now also accepts only the models in its list, caps `max_tokens`, and forwards only the request fields the app uses.
+
 ### Updating to 1.8.1
 
 1.8.1 is a userscript-only change: it adds `@updateURL`/`@downloadURL` to the header. **This is the last time you paste the userscript in by hand.** Open the Tampermonkey dashboard → **Résumé Tailor** → **Editor**, replace everything with the new [`resume-tailor.user.js`](./resume-tailor.user.js), and save.
 
 From then on, Tampermonkey checks GitHub `main` on its normal schedule and offers each new release automatically — no more copy-paste. (You can force a check any time from the Tampermonkey dashboard's **Last updated** column.) The Worker still isn't affected by this; it's deployed separately with `npx wrangler deploy`.
 
-**Forks:** the update URLs point at `banksdaname/resume-tailor`. If you've forked, repoint `@updateURL` and `@downloadURL` at your own repo, or Tampermonkey will pull upstream's copy over yours.
+**Forks:** the update URLs point at this repository. If you've forked, repoint `@updateURL` and `@downloadURL` at your own repo, or Tampermonkey will pull upstream's copy over yours.
 
 ### Updating to 1.8.0 (from 1.7.0 or earlier)
 

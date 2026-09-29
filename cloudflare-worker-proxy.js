@@ -13,6 +13,8 @@
  * 1. Paste this whole file into your Worker's "Edit code" view.
  * 2. Go to Settings -> Variables and Secrets -> add a secret named
  *    ANTHROPIC_API_KEY with your Anthropic API key as the value.
+ *    Add a second secret named PROXY_TOKEN with a long random value; the
+ *    Worker rejects POSTs that don't send it in the x-proxy-token header.
  * 3. Go to Settings -> Bindings -> Add binding -> D1 database. Set the
  *    variable name to DB and select your resume_tailor_logdb database.
  * 4. Deploy, then copy the Worker's URL into the Résumé Tailor panel's
@@ -24,7 +26,7 @@
  * no userscript update needed. See RELEASING.md / the /model-watch command.
  */
 
-const WORKER_VERSION = '1.8.2';
+const WORKER_VERSION = '1.9.0';
 
 /* ==================== MODEL CONFIG (single source of truth) ====================
  * models[]:
@@ -74,6 +76,11 @@ const MODEL_CONFIG = {
 };
 /* =========================== end MODEL CONFIG =========================== */
 
+// Request fields passed through to Anthropic; everything else is dropped.
+const FORWARDED_FIELDS = ['model', 'max_tokens', 'system', 'messages', 'output_config'];
+// Upper bound on max_tokens (the deepest effort level asks for 64k).
+const MAX_TOKENS_CAP = 64000;
+
 export default {
   async fetch(request, env, ctx) {
     // CORS preflight
@@ -98,6 +105,19 @@ export default {
       );
     }
 
+    // Without a shared secret, anyone who finds the Worker URL could spend
+    // your API key. Refuse all POSTs until PROXY_TOKEN is set, then require
+    // the userscript to send the same value.
+    if (!env.PROXY_TOKEN) {
+      return jsonResponse(
+        { error: 'PROXY_TOKEN is not configured on this Worker. Add it as a secret, then enter the same value in the panel under Settings -> Proxy token.' },
+        500
+      );
+    }
+    if (!tokenMatches(request.headers.get('x-proxy-token'), env.PROXY_TOKEN)) {
+      return jsonResponse({ error: 'Missing or wrong proxy token. Check Settings -> Proxy token.' }, 401);
+    }
+
     let body;
     try {
       body = await request.json();
@@ -115,10 +135,19 @@ export default {
     // Anthropic, since the API doesn't expect them.
     const callType = body.call_type || 'unknown';
     const template = body.template || null;
-    const anthropicBody = { ...body };
-    delete anthropicBody.call_type;
-    delete anthropicBody.template;
+    // Forward only the fields the userscript uses, so the proxy can't be
+    // used for tools, web search, or other features billed on your key.
+    const anthropicBody = {};
+    for (const k of FORWARDED_FIELDS) {
+      if (body[k] !== undefined) { anthropicBody[k] = body[k]; }
+    }
     normalizeRequest(anthropicBody);
+    if (!MODEL_CONFIG.models.some((m) => m.id === anthropicBody.model)) {
+      return jsonResponse({ error: 'Model not offered by this proxy: ' + anthropicBody.model }, 400);
+    }
+    if (!(anthropicBody.max_tokens > 0) || anthropicBody.max_tokens > MAX_TOKENS_CAP) {
+      anthropicBody.max_tokens = MAX_TOKENS_CAP;
+    }
 
     // The upstream call and the D1 write are bundled into one promise so it
     // can be registered with ctx.waitUntil(). Without that, a client that
@@ -235,11 +264,21 @@ async function logRun(env, info) {
   ).run();
 }
 
+// Constant-time comparison so response timing doesn't leak the token.
+function tokenMatches(given, expected) {
+  if (typeof given !== 'string') { return false; }
+  const enc = new TextEncoder();
+  const a = enc.encode(given);
+  const b = enc.encode(expected);
+  if (a.byteLength !== b.byteLength) { return false; }
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Headers': 'content-type, x-proxy-token',
   };
 }
 
