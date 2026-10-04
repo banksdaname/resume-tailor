@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.3
+
+- Test release for the update badge. No other changes.
+
 ## 1.9.2
 
 - **The panel tells you when an update is out, whichever userscript manager you use.** When a newer version is on GitHub, a badge next to the version number in the panel header reads **Update available (vX.Y.Z) — click to install**. Clicking it opens your manager's own update screen (Tampermonkey, Violentmonkey and most others handle this the same way); confirm there, then click the badge again (now **Refresh this page to finish updating**) to start using the new version. No more waiting for the manager's daily check.
