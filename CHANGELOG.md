@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.1
+
+- **Placeholders in "Possible additions — only if true" bullets are now one double-clickable word.** Instead of `[issue type]`, `[follow-up task]` or `[PLC/HMI/control panel]`, they appear as `ISSUE_TYPE`, `FOLLOW_UP_TASK` or `PLC_HMI_CONTROL_PANEL`, so a double-click selects the whole placeholder for retyping. Any bracketed placeholders the model still returns are converted automatically.
+
 ## 1.9.0
 
 **Update both the userscript and the Worker, in that order** — see "Updating to 1.9.0" in the README.
