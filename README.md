@@ -59,6 +59,18 @@ That's it — the script now has a working path to Claude without your API key e
 
 To confirm the Worker is live, open its URL directly in your browser. You should see a short JSON listing the available models and `"workerVersion"`.
 
+## Getting updates
+
+When a new version is released, the panel header shows **Update available (vX.Y.Z) — click to install** next to the version number. This works the same in any userscript manager:
+
+1. Click the badge. Your userscript manager (Tampermonkey, Violentmonkey, …) opens its update screen in a new tab.
+2. Confirm the update there.
+3. Back on the page, click the badge again (it now says **Refresh this page to finish updating**), or refresh the page yourself.
+
+If the new tab shows the script's code instead of an update screen, your manager doesn't pick up install links. Open the manager and use its own check-for-updates option instead (in Tampermonkey: icon → **Check for userscript updates**).
+
+Your manager also checks for updates on its own, roughly once a day by default, so you'll get new versions even if you never click the badge.
+
 ## Updating from an earlier version
 
 ### Updating to 1.9.0

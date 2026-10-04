@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.2
+
+- **The panel tells you when an update is out, whichever userscript manager you use.** When a newer version is on GitHub, a badge next to the version number in the panel header reads **Update available (vX.Y.Z) — click to install**. Clicking it opens your manager's own update screen (Tampermonkey, Violentmonkey and most others handle this the same way); confirm there, then click the badge again (now **Refresh this page to finish updating**) to start using the new version. No more waiting for the manager's daily check.
+- If your manager shows the script's code instead of an update screen, the panel tells you to open the manager and check for updates there.
+- The panel checks for updates when it's opened, at most every 30 minutes.
+
 ## 1.9.1
 
 - **Placeholders in "Possible additions — only if true" bullets are now one double-clickable word.** Instead of `[issue type]`, `[follow-up task]` or `[PLC/HMI/control panel]`, they appear as `ISSUE_TYPE`, `FOLLOW_UP_TASK` or `PLC_HMI_CONTROL_PANEL`, so a double-click selects the whole placeholder for retyping. Any bracketed placeholders the model still returns are converted automatically.

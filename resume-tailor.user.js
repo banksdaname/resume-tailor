@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.9.1
+// @version      1.9.2
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.9.1';
+  var SCRIPT_VERSION = '1.9.2';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -384,7 +384,16 @@
   var hdInner = mk('div'); hdInner.style.cssText = 'display:flex;flex-direction:column;gap:1px';
   var hdTitle = mk('b'); hdTitle.textContent = 'R\u00E9sum\u00E9 Tailor';
   var hdVer = mk('span'); hdVer.style.cssText = 'font-size:10px;color:#9aa0ab;font-weight:400'; hdVer.textContent = 'v' + SCRIPT_VERSION;
-  hdInner.appendChild(hdTitle); hdInner.appendChild(hdVer);
+  // Shown by checkForUpdate() when a newer release is on GitHub.
+  var hdUpd = mk('a', { id: 'rt-hdUpd' }); hdUpd.href = '#';
+  hdUpd.style.cssText = 'display:none;font-size:10px;font-weight:600;color:#8a5a00;background:#fff4d6;border:1px solid #f0d58a;border-radius:9px;padding:1px 7px;line-height:1.35;text-decoration:none;cursor:pointer';
+  var hdVerRow = mk('div'); hdVerRow.style.cssText = 'display:flex;align-items:center;gap:6px';
+  hdVerRow.appendChild(hdVer); hdVerRow.appendChild(hdUpd);
+  // Fallback hint shown after the badge is clicked, for managers that don't
+  // pick up .user.js links (the new tab then shows the script's source).
+  var hdUpdNote = mk('div', { id: 'rt-hdUpdNote' });
+  hdUpdNote.style.cssText = 'display:none;font-size:10px;line-height:1.35;color:#6b7280;max-width:240px;margin-top:2px';
+  hdInner.appendChild(hdTitle); hdInner.appendChild(hdVerRow); hdInner.appendChild(hdUpdNote);
   var hdCost = mk('span', { id: 'rt-hdCost' }); hdCost.style.cssText = 'margin-left:8px;font-size:10.5px;color:#9aa0ab;white-space:nowrap';
   var closeBtn = mk('button', { cls: 'rt-x', id: 'rt-close' }); closeBtn.textContent = '\u00D7';
   var hd = ap(mk('div', { cls: 'rt-hd' }), hdLogo, hdInner, hdCost, closeBtn);
@@ -583,6 +592,69 @@
     }).catch(function() { return false; });
   }
 
+  /* ============ update check ============
+     Userscript managers only poll @updateURL on their own schedule (about
+     once a day by default), so the panel compares SCRIPT_VERSION with the
+     published @version and offers an update badge. Opening the .user.js URL
+     is the standard install/update route: Tampermonkey, Violentmonkey and
+     most other managers show their own confirm screen for it. A userscript
+     can't install itself, so that confirm is the one manual step. Managers
+     that don't pick up the link get a fallback hint. Checks at most every
+     30 minutes, fails quietly. */
+  var UPDATE_URL = (typeof GM_info !== 'undefined' && GM_info.script && (GM_info.script.updateURL || GM_info.script.downloadURL)) ||
+    'https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js';
+  var UPDATE_CHECK_MS = 30 * 60 * 1000;
+  // Name of the running manager ("Tampermonkey", "Violentmonkey", …) or ''.
+  function managerName() {
+    try { return (typeof GM_info !== 'undefined' && GM_info.scriptHandler) ? String(GM_info.scriptHandler) : ''; } catch (e) { return ''; }
+  }
+  function isNewerVersion(a, b) {
+    var x = String(a).split('.'), y = String(b).split('.');
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var d = (parseInt(x[i], 10) || 0) - (parseInt(y[i], 10) || 0);
+      if (d) { return d > 0; }
+    }
+    return false;
+  }
+  function renderUpdateLink(latest) {
+    // Once clicked, keep the "refresh" state until the page reloads.
+    if (hdUpd.dataset.state === 'reload') { return; }
+    if (!latest || !isNewerVersion(latest, SCRIPT_VERSION)) { hdUpd.style.display = 'none'; return; }
+    var mgr = managerName();
+    hdUpd.textContent = 'Update available (v' + latest + ') \u2014 click to install';
+    hdUpd.title = 'Opens ' + (mgr ? mgr + '\u2019s' : 'your userscript manager\u2019s') + ' update screen. Confirm the update there, then refresh this page.';
+    hdUpd.dataset.state = 'update';
+    hdUpd.style.display = 'inline-block';
+  }
+  hdUpd.addEventListener('click', function(e) {
+    e.preventDefault();
+    // Second click, after confirming in the manager: reload to run the new version.
+    if (hdUpd.dataset.state === 'reload') { location.reload(); return; }
+    if (typeof GM_openInTab === 'function') { GM_openInTab(UPDATE_URL, { active: true, insert: true }); }
+    else { window.open(UPDATE_URL, '_blank', 'noopener'); }
+    var mgr = managerName();
+    hdUpd.textContent = 'Refresh this page to finish updating';
+    hdUpd.title = 'The new version runs after this page reloads. Click to refresh now.';
+    hdUpd.dataset.state = 'reload';
+    hdUpdNote.textContent = 'Seeing code instead of an update screen? Open ' + (mgr || 'your userscript manager') + ' and check for updates.';
+    hdUpdNote.style.display = 'block';
+  });
+  function checkForUpdate() {
+    var saved = null;
+    try { saved = JSON.parse(GM_getValue('rt_updateCheck', 'null')); } catch (e) {}
+    if (saved) { renderUpdateLink(saved.latest); }
+    if (saved && Date.now() - saved.at < UPDATE_CHECK_MS) { return; }
+    // Cache-busting query: raw.githubusercontent.com caches files for 5 minutes.
+    fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(function(res) {
+      return res.ok ? res.text() : '';
+    }).then(function(text) {
+      var m = /^\/\/\s*@version\s+(\S+)/m.exec(text);
+      if (!m) { return; }
+      GM_setValue('rt_updateCheck', JSON.stringify({ at: Date.now(), latest: m[1] }));
+      renderUpdateLink(m[1]);
+    }).catch(function() {});
+  }
+
   /* ============ pill state machine ============
      State A (faded): low-opacity dot, only "RT" visible, no X shown.
      State B (solid): full-opacity dot with an X in its corner.
@@ -620,7 +692,7 @@
   // back on close. Uses inline display, kept separate from the opacity/X
   // state that setSolid manages, so the two never fight — and so it survives
   // stylesheet wipes like the rest of the launcher's styling.
-  function openPanel() { reattach(); setSolid(true); launch.style.display = 'none'; root.classList.add('open'); shadowHost.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } }
+  function openPanel() { reattach(); setSolid(true); launch.style.display = 'none'; root.classList.add('open'); shadowHost.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } checkForUpdate(); }
   function closePanel() { root.classList.remove('open'); shadowHost.classList.remove('open'); launch.style.display = 'flex'; setSolid(true); }
   function showPill() { reattach(); launch.classList.remove('rt-off'); GM_setValue('rt_pillHidden', false); }
 
