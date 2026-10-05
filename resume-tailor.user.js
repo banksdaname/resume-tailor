@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.9.3
+// @version      1.9.4
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.9.3';
+  var SCRIPT_VERSION = '1.9.4';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -392,7 +392,7 @@
   // Fallback hint shown after the badge is clicked, for managers that don't
   // pick up .user.js links (the new tab then shows the script's source).
   var hdUpdNote = mk('div', { id: 'rt-hdUpdNote' });
-  hdUpdNote.style.cssText = 'display:none;font-size:10px;line-height:1.35;color:#6b7280;max-width:240px;margin-top:2px';
+  hdUpdNote.style.cssText = 'display:none;font-size:11px;font-weight:500;line-height:1.4;color:#b42318;max-width:240px;margin-top:3px';
   hdInner.appendChild(hdTitle); hdInner.appendChild(hdVerRow); hdInner.appendChild(hdUpdNote);
   var hdCost = mk('span', { id: 'rt-hdCost' }); hdCost.style.cssText = 'margin-left:8px;font-size:10.5px;color:#9aa0ab;white-space:nowrap';
   var closeBtn = mk('button', { cls: 'rt-x', id: 'rt-close' }); closeBtn.textContent = '\u00D7';
@@ -636,7 +636,7 @@
     hdUpd.textContent = 'Refresh this page to finish updating';
     hdUpd.title = 'The new version runs after this page reloads. Click to refresh now.';
     hdUpd.dataset.state = 'reload';
-    hdUpdNote.textContent = 'Seeing code instead of an update screen? Open ' + (mgr || 'your userscript manager') + ' and check for updates.';
+    hdUpdNote.textContent = 'Didn\u2019t get an update screen? If the new tab only showed code, open ' + (mgr || 'your userscript manager') + ' and choose \u201cCheck for updates.\u201d';
     hdUpdNote.style.display = 'block';
   });
   function checkForUpdate() {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.4
+
+- **Clearer, easier-to-read update hint.** After you click the update badge, the line underneath now reads *"Didn't get an update screen? If the new tab only showed code, open [your manager] and choose 'Check for updates.'"* It's shown in red at a slightly larger size so it stands out, instead of small light grey text.
+
 ## 1.9.3
 
 - Test release for the update badge. No other changes.
