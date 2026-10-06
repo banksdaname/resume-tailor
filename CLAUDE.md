@@ -13,6 +13,7 @@ using raw `fetch` (no SDK). The Worker also logs call metadata to Cloudflare D1.
   "Updating from an earlier version".
 
 ## Commands
+- `/release`: ship the current changes (version bump, changelog, syntax check, one confirm, then commit/push/tag/verify, and Worker deploy if it changed). Args: a version, `patch`/`minor`, or `test`.
 - `/model-watch`: check Anthropic's docs for model, price, and effort changes and propose a `MODEL_CONFIG` update.
 - `/claude-api migrate …`: built-in skill for API parameter and breaking changes. It does not auto-activate here (no SDK import), so invoke it by name.
 

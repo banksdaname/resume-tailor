@@ -29,6 +29,12 @@ If the config changed, the Worker must be redeployed (see step 2's last item).
 
 ## 2. Standard release steps
 
+**Fastest path (Claude Code, from the repo folder):** run `/release` (or
+`/release minor`, `/release 1.9.5`, `/release test`). It bumps the versions,
+writes the changelog, syntax-checks, asks you once, then commits, pushes, tags,
+checks that GitHub serves the new version, and offers to deploy the Worker if it
+changed. The steps below are the manual version.
+
 - [ ] Bump `@version` in the userscript header AND `SCRIPT_VERSION` (both must match). If the Worker changed, bump `WORKER_VERSION` too.
 - [ ] Add a CHANGELOG.md entry describing the changes.
 - [ ] Syntax-check: strip the `// ==UserScript==` header and run the body through `new Function(...)`; do the same for the worker (`export default` → `var _w =`).
