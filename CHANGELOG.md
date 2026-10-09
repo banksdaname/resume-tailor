@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.5
+
+- **The exported PDF's filename now includes the hiring company.** The suggested name is `FirstName_LastName_Company_JobTitle_Resume` (for example `Banks_Smith_Acme_Senior_Data_Analyst_Resume`). The company comes from the job posting only. If the posting doesn't clearly name one, it's left out and the name looks the same as before. It's never taken from your own résumé.
+- **Legal endings are dropped from the company name.** Inc, LLC, Ltd, Corp, Co, GmbH, PLC and similar endings are removed, with or without a period, so "Acme, Inc." becomes just `Acme`.
+
 ## 1.9.4
 
 - **Clearer, easier-to-read update hint.** After you click the update badge, the line underneath now reads *"Didn't get an update screen? If the new tab only showed code, open [your manager] and choose 'Check for updates.'"* It's shown in red at a slightly larger size so it stands out, instead of small light grey text.

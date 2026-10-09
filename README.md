@@ -187,7 +187,7 @@ A live preview thumbnail below the dropdown updates as you change the selection,
 3. Click **Grab from this page** (or paste the job description manually if auto-detection doesn't isolate it cleanly).
 4. Click **Tailor my résumé**. Review each suggested title change, bullet rewrite, and potential new bullet — approve or skip individually.
 5. Click **Build my résumé**.
-6. **Export PDF** opens a new tab in your chosen style and triggers your browser's print dialog — choose **Save as PDF**, and make sure **Background graphics** is checked under Options, or the sidebar's background color won't appear in the saved PDF. The suggested filename follows the pattern `FirstName_LastName_JobTitle_Resume`, using the job title from the posting when it can be detected, or your current résumé title otherwise.
+6. **Export PDF** opens a new tab in your chosen style and triggers your browser's print dialog — choose **Save as PDF**, and make sure **Background graphics** is checked under Options, or the sidebar's background color won't appear in the saved PDF. The suggested filename follows the pattern `FirstName_LastName_Company_JobTitle_Resume`, using the hiring company and job title from the posting when they can be detected. If the company isn't stated, it's left out; if the title isn't, your current résumé title is used instead.
 7. **Copy HTML** copies a link you can paste directly into a new tab's address bar, useful as a fallback if a popup blocker stops Export from opening a new tab.
 8. **ATS · copy** switches to the plain-text version for pasting into application portals.
 
