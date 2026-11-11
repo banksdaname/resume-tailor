@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.1
+
+- **A new PDF style for uploads: Parser-friendly.** Pick it under Settings → PDF style when a job site reads your uploaded résumé and fills in the application for you. It is one plain column with standard headings (Summary, Skills, Experience, Education, Certifications), so the site reads it top to bottom without mixing sidebar text into your jobs. Each job is a title line followed by a company, location and dates line, and the signature win becomes the first bullet. The four designed styles are unchanged, for when a person reads your résumé first.
+- **Month and year on the upload style, years only on the designed styles.** Building a résumé now produces both forms of each job's dates. The Parser-friendly PDF and the ATS plain text show the month wherever your source material states it (for example a LinkedIn profile), and the year alone where it doesn't. A month is never guessed. The four designed styles always show years only, so they look consistent.
+- Job location now appears in the Parser-friendly PDF. Résumés built before this version show years only until you click Build again.
+
 ## 1.10.0
 
 **Redeploy the Worker too** (`npx wrangler deploy`, now Worker 1.9.1) to get the new models and prices. The userscript updates itself as usual.

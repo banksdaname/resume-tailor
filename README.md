@@ -2,7 +2,7 @@
 
 A browser userscript that tailors your résumé to a specific job posting using Claude, then produces two outputs:
 
-- A formatted **PDF** in your choice of four styles (Editorial Warmth, Slate Professional, Engineering Blueprint, or Bold Data-Forward).
+- A formatted **PDF** in your choice of five styles: four designed ones (Editorial Warmth, Slate Professional, Engineering Blueprint, Bold Data-Forward) and a plain Parser-friendly one for uploading to job sites.
 - A plain-text **ATS version** for pasting directly into job application portals.
 
 It runs entirely in your browser. Your résumé content is stored locally via your userscript manager's storage — nothing is sent anywhere except the job description and your résumé text, which go to Claude through a small proxy you control (see below).
@@ -171,12 +171,15 @@ Click **Save knowledge base**. This is stored locally in your browser via the us
 
 ## Choosing a PDF style
 
-In **Settings**, the **PDF style** dropdown offers four designs:
+In **Settings**, the **PDF style** dropdown offers four designed styles and one plain style for uploads:
 
 - **Editorial Warmth** — warm cream background, serif headers, clay-accented sidebar. Classic and approachable.
 - **Slate Professional** — dark slate sidebar with amber accents. A confident, modern corporate look.
 - **Engineering Blueprint** — monospace section labels and a teal accent. Suited to engineering and technical roles.
 - **Bold Data-Forward** — a full-width deep-blue header band with filled achievement callouts. High-contrast and direct.
+- **Parser-friendly (for uploads)** — one plain column with standard headings, made for job sites that read your uploaded résumé and fill in the application for you. Each job is a title line followed by a company, location and dates line, the signature win becomes the first bullet, and dates include the month wherever your source material states it (a month is never guessed). Use this one when you upload a PDF, and a designed style when a person will read it first.
+
+The four designed styles always show years only for job dates. The Parser-friendly style and the ATS plain text show month and year where known.
 
 A live preview thumbnail below the dropdown updates as you change the selection, using placeholder sample content, so you can see what a style looks like before ever running a tailoring pass. Your choice is saved with the rest of your settings.
 

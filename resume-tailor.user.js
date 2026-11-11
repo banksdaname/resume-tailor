@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.10.0
+// @version      1.10.1
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.10.0';
+  var SCRIPT_VERSION = '1.10.1';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -863,17 +863,17 @@
     summary: 'Product manager with eight years driving growth initiatives across B2B SaaS platforms, combining data-driven prioritization with close cross-functional execution.',
     experience: [
       {
-        title: 'Senior Product Manager', company: 'Northwind Software', dates: '2021\u2013Present',
+        title: 'Senior Product Manager', company: 'Northwind Software', location: 'Austin, TX', dates: '2021\u2013Present', datesFull: 'Mar 2021 - Present',
         highlight: 'Launched a self-serve onboarding flow that lifted trial-to-paid conversion 18% within two quarters.',
         condensed: false,
         bullets: ['Own the product roadmap for the platform\u2019s core workspace.', 'Run quarterly discovery cycles with enterprise customers.']
       },
       {
-        title: 'Product Manager', company: 'Carverdale Tech', dates: '2018\u20132021',
+        title: 'Product Manager', company: 'Carverdale Tech', location: 'Dallas, TX', dates: '2018\u20132021', datesFull: 'Jun 2018 - Feb 2021',
         condensed: false,
         bullets: ['Managed the end-to-end roadmap for billing and subscriptions.']
       },
-      { title: 'Associate Product Manager', company: 'Carverdale Tech', dates: '2016\u20132018', condensed: true }
+      { title: 'Associate Product Manager', company: 'Carverdale Tech', location: 'Dallas, TX', dates: '2016\u20132018', datesFull: 'Aug 2016 - Jun 2018', condensed: true }
     ],
     skills: ['Roadmapping', 'SQL', 'A/B testing', 'Stakeholder alignment'],
     education: [{ degree: 'B.S. Business Administration', sub: 'University of Texas at Austin \u00B7 2012\u20132016' }],
@@ -1060,8 +1060,7 @@
       var previewEl = rt$('rt-preview');
       clearEl(previewEl);
       previewEl.appendChild(buildPreviewFrame(LAST_RESUME));
-      var activeTpl = TEMPLATES[CFG.template] || TEMPLATES.editorial;
-      rt$('rt-outputDesc').textContent = 'PDF is your ' + activeTpl.label + ' formatted version. ATS is plain text for job portals.';
+      rt$('rt-outputDesc').textContent = outputDescText();
     }
   });
 
@@ -1657,7 +1656,7 @@
   }
 
   var SYS_A = 'You are an expert r\u00E9sum\u00E9 editor and career coach. Tailor the r\u00E9sum\u00E9 to the job WITHOUT exaggerating or fabricating.\nRULES:\n1. Rewrites must be grounded in the candidate\'s existing material.\n2. New bullets must be phrased as "Did you \u2026?" questions, never asserted as fact.\n3. Keep the candidate\'s voice: clear, factual, achievement-oriented. No buzzwords.\n4. Title suggestions reframe the real role in the target role\'s language while preserving honest seniority signal.\n5. highlight: one crisp Signature win sentence per role for top 2-3 roles.\n6. condensed: set true for older/less relevant roles.\n7. allCompanies must list EVERY employer/company name you can identify anywhere in the candidate\'s materials, in reverse-chronological order \u2014 not just the ones referenced in titleSuggestions or bulletRewrites. This list is used to populate a company picker, so it must be complete even for roles that didn\'t get a suggestion this run.\n8. targetJobTitle: the exact job title from the TARGET JOB DESCRIPTION (e.g. "Senior Data Analyst"), used only for naming the exported file. If the posting has no clear single title, use an empty string \u2014 do not guess.\n9. targetCompany: the hiring company\'s name from the TARGET JOB DESCRIPTION, used only for naming the exported file. If it isn\'t clearly stated, use an empty string \u2014 do not guess.\n10. Placeholders in phrasingIfYes (details only the candidate knows) must be a single short, descriptive ALL-CAPS token with words joined by underscores \u2014 no brackets, spaces, slashes or hyphens. Examples: EQUIPMENT, ISSUE_TYPE, PLC_HMI_CONTROL_PANEL, TESTING_OR_TROUBLESHOOTING.\n11. MATCH SCORE: list for yourself the distinct things the TARGET JOB DESCRIPTION asks for (skills, tools, experience, certifications, title language), each as must-have or nice-to-have. match.startScore = the share of them already clearly evidenced in the candidate\'s materials AS THEY STAND, before any of your suggestions, as an integer 0-100 with must-haves counting double. match.missingMustHaves = short names (1-4 words) of must-haves NOT evidenced, most important first, max 6. Every titleSuggestion, bulletRewrite, newBulletPrompt and skills.toAdd item gets "gain": the integer number of points the score would rise if that one suggestion were applied (0 if it only improves wording and makes nothing new visible), and "closes": the exact missingMustHaves string it would cover, or "" if none. Do not count the same requirement in two gains; startScore plus all gains must not exceed 100. Be honest and conservative: do not inflate the start or the gains.\nOutput ONLY valid JSON. No markdown, no preamble.';
-  var SYS_B = 'You are an expert r\u00E9sum\u00E9 editor. Assemble the FINAL tailored r\u00E9sum\u00E9 as structured JSON applying ONLY approved changes. Do not invent content. Preserve real employers, dates, education, metrics. Keep the voice factual and clean.\nORDER RULE (important): List roles in "experience" in the SAME ORDER they appear in the candidate\'s source materials. Do not reorder, re-rank, or re-sort roles by date or relevance \u2014 preserve the original sequence exactly.\nSUMMARY RULE (important): The candidate\'s materials include an ORIGINAL SUMMARY/PROFILE field. Use that as your starting point and edit it minimally to tune emphasis toward the job \u2014 reorder or lightly reword, do not rewrite from scratch, do not pull in unrelated material from LinkedIn or other sources, do not pad with generic resume language. Target 2-3 sentences, hard cap 60 words. If no original summary exists in the materials, write a short one in the candidate\'s own voice from their real experience only.\nHIGHLIGHT RULE (important): For each role, "highlight" is a standalone callout, NOT a duplicate of any line in "bullets". If a role\'s best metric/achievement is the basis for the highlight, the matching bullet in "bullets" must either be removed (if it would be 100% redundant) or rewritten to cover different specifics not already stated in the highlight. Never let the highlight sentence and a bullet sentence repeat the same wording back to back.\nOutput ONLY valid JSON, no markdown.';
+  var SYS_B = 'You are an expert r\u00E9sum\u00E9 editor. Assemble the FINAL tailored r\u00E9sum\u00E9 as structured JSON applying ONLY approved changes. Do not invent content. Preserve real employers, dates, education, metrics. Keep the voice factual and clean.\nORDER RULE (important): List roles in "experience" in the SAME ORDER they appear in the candidate\'s source materials. Do not reorder, re-rank, or re-sort roles by date or relevance \u2014 preserve the original sequence exactly.\nSUMMARY RULE (important): The candidate\'s materials include an ORIGINAL SUMMARY/PROFILE field. Use that as your starting point and edit it minimally to tune emphasis toward the job \u2014 reorder or lightly reword, do not rewrite from scratch, do not pull in unrelated material from LinkedIn or other sources, do not pad with generic resume language. Target 2-3 sentences, hard cap 60 words. If no original summary exists in the materials, write a short one in the candidate\'s own voice from their real experience only.\nHIGHLIGHT RULE (important): For each role, "highlight" is a standalone callout, NOT a duplicate of any line in "bullets". If a role\'s best metric/achievement is the basis for the highlight, the matching bullet in "bullets" must either be removed (if it would be 100% redundant) or rewritten to cover different specifics not already stated in the highlight. Never let the highlight sentence and a bullet sentence repeat the same wording back to back.\nDATES RULE (important): Each role gets two date strings. "dates" is YEARS ONLY (e.g. "2021 - Present", "2018 - 2021"), never with months. "datesFull" is the same range with a three-letter month before each year (e.g. "Mar 2021 - Present") wherever the candidate\'s materials state the month for that role; where a month is not stated, use the year alone for that end of the range. NEVER guess, default or invent a month.\nOutput ONLY valid JSON, no markdown.';
 
   /* ============ analyze ============ */
   rt$('rt-analyze').addEventListener('click', function() {
@@ -2013,7 +2012,7 @@
     var bullets = Object.values(DECISIONS.bullets).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return { company: d.company, text: d.text }; });
     var news = Object.values(DECISIONS.news).filter(function(d) { return d.status === 'approved'; }).map(function(d) { return d.text; });
     var skills = Array.from(DECISIONS.skills.keep).concat(Array.from(DECISIONS.skills.add));
-    var user = 'ORIGINAL MATERIALS:\n' + kbText() + '\nAPPROVED TITLE CHANGES: ' + JSON.stringify(titles) + '\nAPPROVED REWRITTEN BULLETS: ' + JSON.stringify(bullets) + '\nAPPROVED NEW BULLETS: ' + JSON.stringify(news) + '\nFINAL SKILLS: ' + JSON.stringify(skills) + '\n\nBuild the complete r\u00E9sum\u00E9. Use approved titles \u2014 apply them to matching roles whether the role is condensed or not (a condensed row still shows the title, just without bullets). Place rewritten/new bullets in correct roles; keep other real bullets.\nFor top 2-3 roles set highlight to best single measurable Signature Win sentence.\nFor older/less relevant roles set condensed:true and omit bullets, but still apply any approved title change for that role.\nReturn JSON exactly:\n{"name":"","tagline":"short italic descriptor","contact":"City, ST \u00B7 phone \u00B7 email \u00B7 linkedin","summary":"2-3 factual sentences tuned to the job","experience":[{"title":"","company":"","location":"","dates":"","highlight":"","condensed":false,"bullets":[""]}],"skills":[""],"education":[{"degree":"","sub":""}],"certifications":[""]}';
+    var user = 'ORIGINAL MATERIALS:\n' + kbText() + '\nAPPROVED TITLE CHANGES: ' + JSON.stringify(titles) + '\nAPPROVED REWRITTEN BULLETS: ' + JSON.stringify(bullets) + '\nAPPROVED NEW BULLETS: ' + JSON.stringify(news) + '\nFINAL SKILLS: ' + JSON.stringify(skills) + '\n\nBuild the complete r\u00E9sum\u00E9. Use approved titles \u2014 apply them to matching roles whether the role is condensed or not (a condensed row still shows the title, just without bullets). Place rewritten/new bullets in correct roles; keep other real bullets.\nFor top 2-3 roles set highlight to best single measurable Signature Win sentence.\nFor older/less relevant roles set condensed:true and omit bullets, but still apply any approved title change for that role.\nReturn JSON exactly:\n{"name":"","tagline":"short italic descriptor","contact":"City, ST \u00B7 phone \u00B7 email \u00B7 linkedin","summary":"2-3 factual sentences tuned to the job","experience":[{"title":"","company":"","location":"","dates":"","datesFull":"","highlight":"","condensed":false,"bullets":[""]}],"skills":[""],"education":[{"degree":"","sub":""}],"certifications":[""]}';
     callClaudeAndParse(SYS_B, user, ASSEMBLE_MAX_TOKENS, 'assemble').then(function(parsed) {
       LAST_RESUME = parsed;
       dedupeHighlightBullets(LAST_RESUME);
@@ -2051,8 +2050,7 @@
 
       previewEl.appendChild(buildPreviewFrame(LAST_RESUME));
       rt$('rt-ats').value = atsText(LAST_RESUME);
-      var activeTpl = TEMPLATES[CFG.template] || TEMPLATES.editorial;
-      rt$('rt-outputDesc').textContent = 'PDF is your ' + activeTpl.label + ' formatted version. ATS is plain text for job portals.';
+      rt$('rt-outputDesc').textContent = outputDescText();
       rt$('rt-outputCard').classList.remove('hidden');
       rt$('rt-outputCard').scrollIntoView({ behavior: 'smooth' });
     }).catch(function(e) {
@@ -2361,6 +2359,71 @@
       '  </div>\n\n</body>\n</html>';
   }
 
+  /* ============ Parser-friendly — one plain column for job-site uploads.
+     Built for the software that reads an uploaded résumé and fills in the
+     application, so every choice favours unambiguous text over design:
+     - single column, so reading order is the same however text is extracted
+     - standard headings (SUMMARY, SKILLS, EXPERIENCE, EDUCATION, CERTIFICATIONS)
+     - each job is two lines: title, then company | location | dates
+     - month-and-year dates (datesFull) where the source states them
+     - the highlight is just the first bullet, with no "Signature win" label
+     - bullets are real "•" characters in the text, not CSS decoration
+     - contact items never wrap mid-item (a split URL parses as two things)
+     - system fonts only, no letter-spacing, no page footer
+     @page margin stays 0 like the other styles: with real page margins Chrome
+     prints its own date/URL header and footer by default, which would land
+     in the parsed text. Top/bottom page spacing instead comes from spacer
+     cells in a layout table's thead/tfoot, which repeat on every page.
+     role="presentation" keeps the table out of the PDF's structure tags. ============ */
+  function parserDates(j) { return (j && (j.datesFull || j.dates)) || ''; }
+  function buildParserHTML(r) {
+    var bullet = function(t) { return '<li><span class="dot">•</span> ' + esc(t) + '</li>'; };
+    var jobsHTML = (r.experience || []).map(function(j) {
+      var meta = [j.company, j.location, parserDates(j)].filter(Boolean).map(esc).join(' | ');
+      var items = [j.highlight].concat(j.bullets || []).filter(Boolean);
+      return '<div class="job"><div class="job-head"><div class="job-title">' + esc(j.title) + '</div>' +
+        (meta ? '<div class="job-meta">' + meta + '</div>' : '') + '</div>' +
+        (items.length ? '<ul>' + items.map(bullet).join('') + '</ul>' : '') + '</div>';
+    }).join('\n');
+    var contactHtml = esc(r.contact || '').split(/ · |\n/).filter(Boolean).map(function(part) { return '<span class="nb">' + part + '</span>'; }).join(' | ');
+    var skillsStr = (r.skills || []).map(esc).join(', ');
+    var eduHTML = (r.education || []).map(function(e) { return '<div class="edu"><div class="edu-deg">' + esc(e.degree || '') + '</div>' + (e.sub ? '<div>' + esc(e.sub) + '</div>' : '') + '</div>'; }).join('');
+    var certHTML = (r.certifications || []).filter(Boolean).map(bullet).join('');
+    var section = function(heading, body) { return body ? '<h2>' + heading + '</h2>\n' + body + '\n' : ''; };
+
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<style>\n' +
+      '@page{size:Letter;margin:0}\n' +
+      '*{margin:0;padding:0;box-sizing:border-box}\n' +
+      'html,body{font-family:Arial,Helvetica,sans-serif;color:#111111;background:#ffffff}\n' +
+      'body{font-size:10pt;line-height:1.38}\n' +
+      'table.sheet{width:100%;border-collapse:collapse}\n' +
+      '.sheet td{padding:0 0.7in;vertical-align:top}\n' +
+      '.pg-space{height:0.5in}\n' +
+      '.name{font-size:19pt;font-weight:700;text-align:center;text-transform:uppercase;line-height:1.15}\n' +
+      '.tagline,.contact{text-align:center}\n' +
+      '.tagline{margin-top:3px}\n' +
+      '.nb{white-space:nowrap}\n' +
+      'h2{font-size:11.5pt;font-weight:700;margin:13px 0 4px;break-after:avoid;page-break-after:avoid}\n' +
+      '.job{margin-bottom:8px}\n' +
+      '.job-head{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}\n' +
+      '.job-title,.edu-deg{font-weight:700}\n' +
+      'ul{list-style:none;margin-top:2px}\n' +
+      'li{padding-left:9pt;text-indent:-9pt;margin-bottom:1.5px;break-inside:avoid;page-break-inside:avoid}\n' +
+      '.dot{display:inline-block;width:6.2pt;text-indent:0}\n' +
+      '.edu{margin-bottom:4px}\n' +
+      '</style>\n</head>\n<body>\n' +
+      '<table class="sheet" role="presentation">\n<thead><tr><td><div class="pg-space"></div></td></tr></thead>\n<tfoot><tr><td><div class="pg-space"></div></td></tr></tfoot>\n<tbody><tr><td>\n' +
+      '<div class="name">' + esc(r.name || '') + '</div>\n' +
+      (r.tagline ? '<div class="tagline">' + esc(r.tagline) + '</div>\n' : '') +
+      (contactHtml ? '<div class="contact">' + contactHtml + '</div>\n' : '') +
+      section('SUMMARY', r.summary ? '<div>' + esc(r.summary) + '</div>' : '') +
+      section('SKILLS', skillsStr ? '<div>' + skillsStr + '</div>' : '') +
+      section('EXPERIENCE', jobsHTML) +
+      section('EDUCATION', eduHTML) +
+      section('CERTIFICATIONS', certHTML ? '<ul>' + certHTML + '</ul>' : '') +
+      '</td></tr></tbody>\n</table>\n</body>\n</html>';
+  }
+
   // Template registry — maps a template id to its builder function, plus
   // metadata used by the Settings selector and the Step 3 explainer text.
   var TEMPLATES = {
@@ -2383,6 +2446,12 @@
       label: 'Bold Data-Forward',
       build: buildBoldHTML,
       blurb: 'A full-width deep-blue header band with filled achievement callouts \u2014 high-contrast and direct.'
+    },
+    parser: {
+      label: 'Parser-friendly (for uploads)',
+      build: buildParserHTML,
+      blurb: 'One plain column with standard headings and month-and-year dates \u2014 built for job sites that read your r\u00E9sum\u00E9 and fill in the application for you. Less design, fewer wrong boxes.',
+      outputDesc: 'PDF is your Parser-friendly version, made for uploading to job sites that fill in the application from your r\u00E9sum\u00E9. ATS is plain text for pasting into forms.'
     }
   };
 
@@ -2397,7 +2466,7 @@
       L.push('EXPERIENCE');
       r.experience.forEach(function(j) {
         L.push((j.title || '') + (j.company ? '  \u2014  ' + j.company : ''));
-        var m = [j.location, j.dates].filter(Boolean).join('  |  ');
+        var m = [j.location, parserDates(j)].filter(Boolean).join('  |  ');
         if (m) { L.push(m); }
         (j.bullets || []).forEach(function(b) { L.push('- ' + b); });
         L.push('');
@@ -2432,6 +2501,12 @@
   // Resolves the currently selected template's HTML builder, falling back
   // to Editorial Warmth if the saved id is unrecognized (e.g. an older
   // install without a template choice yet, or a registry key typo).
+  // Explainer line above the output. A style may supply its own wording
+  // (outputDesc) when the generic sentence wouldn't describe it well.
+  function outputDescText() {
+    var t = TEMPLATES[CFG.template] || TEMPLATES.editorial;
+    return t.outputDesc || ('PDF is your ' + t.label + ' formatted version. ATS is plain text for job portals.');
+  }
   function activeTemplateBuild() {
     var t = TEMPLATES[CFG.template];
     return (t && t.build) || buildEditorialHTML;

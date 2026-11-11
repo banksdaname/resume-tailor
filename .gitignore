@@ -8,3 +8,6 @@ node_modules/
 
 # Maintainer-only notes for Claude Code
 CLAUDE.local.md
+
+# Personal résumé PDFs used for testing
+*.pdf
