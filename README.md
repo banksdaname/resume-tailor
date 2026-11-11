@@ -32,7 +32,7 @@ The launcher is a small circular dot, faded to low opacity by default so it does
 You'll need three things before this is useful:
 
 1. **A userscript manager** — [Tampermonkey](https://www.tampermonkey.net/) (Chrome, Firefox, Edge, Safari) or [Violentmonkey](https://violentmonkey.github.io/) (Chrome, Firefox). Either works; this guide uses Tampermonkey.
-2. **An Anthropic API key** — from [console.anthropic.com](https://console.anthropic.com). This is a pay-as-you-go API key, separate from a claude.ai subscription. Typical cost per tailoring run is a few cents depending on the model you choose.
+2. **An Anthropic API key** — from [console.anthropic.com](https://console.anthropic.com). This is a pay-as-you-go API key, separate from a claude.ai subscription. A typical tailoring run costs from about 1¢ (Haiku 5.5) to about 55¢ (Fable 5.2), and about 30¢ on the default model (Opus 5.5).
 3. **A small proxy of your own** — the script never embeds an API key directly (that would expose it to anyone who reads the script's source, since userscripts run in plain JavaScript visible in DevTools). Instead it calls a tiny proxy you deploy yourself, which holds your key server-side. Setup instructions for a free Cloudflare Worker proxy are below — it takes about five minutes.
 
 ## Installation
@@ -190,6 +190,8 @@ A live preview thumbnail below the dropdown updates as you change the selection,
 6. **Export PDF** opens a new tab in your chosen style and triggers your browser's print dialog — choose **Save as PDF**, and make sure **Background graphics** is checked under Options, or the sidebar's background color won't appear in the saved PDF. The suggested filename follows the pattern `FirstName_LastName_Company_JobTitle_Resume`, using the hiring company and job title from the posting when they can be detected. If the company isn't stated, it's left out; if the title isn't, your current résumé title is used instead.
 7. **Copy HTML** copies a link you can paste directly into a new tab's address bar, useful as a fallback if a popup blocker stops Export from opening a new tab.
 8. **ATS · copy** switches to the plain-text version for pasting into application portals.
+
+After **Tailor my résumé**, a match score appears under the panel header: an estimate from 0 to 100 of how much of what the posting asks for already shows on your résumé (must-haves count double), with any missing must-haves listed by name. A line marks where you started, the bar moves as you approve or skip suggestions, and each suggestion carries a badge: `+#` if it raises the score, 💄 if it only improves wording. It's a guide for deciding whether to apply and which edits matter, not a prediction of whether you'll hear back.
 
 A running cost estimate for the current session is shown discreetly in the panel header, next to the version number — hover over it for a breakdown of input/output tokens on the most recent call. This is an estimate based on Anthropic's published rates, not a billing-accurate figure.
 

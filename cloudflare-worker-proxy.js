@@ -26,7 +26,7 @@
  * no userscript update needed. See RELEASING.md / the /model-watch command.
  */
 
-const WORKER_VERSION = '1.9.0';
+const WORKER_VERSION = '1.9.1';
 
 /* ==================== MODEL CONFIG (single source of truth) ====================
  * models[]:
@@ -44,22 +44,24 @@ const WORKER_VERSION = '1.9.0';
  *   xhigh/max, since thinking and the answer share max_tokens).
  * ============================================================================= */
 const MODEL_CONFIG = {
-  updated: '2026-09-29',
+  updated: '2026-11-10',
   defaultModel: 'claude-opus-5-5',
   models: [
-    { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', note: 'fastest + cheapest (~5¢/run)',
-      rates: { input: 1, output: 5 },   efforts: [], defaultEffort: null },
-    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', note: 'fast + budget (~10¢/run)',
+    { id: 'claude-haiku-5-5', name: 'Haiku 5.5', note: 'fastest + cheapest (~1¢/run)',
+      rates: { input: 0.1, output: 0.5 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', note: 'fast + budget (~15¢/run)',
       rates: { input: 2, output: 10 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
-    { id: 'claude-opus-5-5',  name: 'Opus 5.5',   note: 'recommended (~20¢/run)',
+    { id: 'claude-opus-5-5',  name: 'Opus 5.5',   note: 'recommended (~30¢/run)',
       rates: { input: 4, output: 20 },  efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
-    { id: 'claude-fable-5-1', name: 'Fable 5.1',  note: 'Mythos-class, most capable (~50¢/run)',
-      rates: { input: 10, output: 50 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
+    { id: 'claude-fable-5-2', name: 'Fable 5.2',  note: 'Mythos-class, most capable (~55¢/run)',
+      rates: { input: 8, output: 40 }, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
   ],
   replaced: {
     'claude-sonnet-5': 'claude-sonnet-5-5',
     'claude-opus-5': 'claude-opus-5-5',
-    'claude-fable-5': 'claude-fable-5-1',
+    'claude-fable-5': 'claude-fable-5-2',
+    'claude-fable-5-1': 'claude-fable-5-2',
+    'claude-haiku-4-5-20251001': 'claude-haiku-5-5',
     'claude-opus-4-8': 'claude-opus-5-5',
     'claude-opus-4-7': 'claude-opus-5-5',
     'claude-opus-4-6': 'claude-opus-5-5',

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.10.0
+
+**Redeploy the Worker too** (`npx wrangler deploy`, now Worker 1.9.1) to get the new models and prices. The userscript updates itself as usual.
+
+- **A match score after you click Tailor.** A strip under the panel header shows how much of what the posting asks for already shows on your résumé, as a number from 0 to 100 coloured red, amber or green, with a plain verdict (Long shot, Worth it with edits, Strong match). Must-haves count double. It's marked **est** because it comes from one reading of the posting and can shift a few points between runs. It isn't a prediction of whether you'll hear back.
+- **The must-haves you're missing are listed by name** under the score, so you can judge whether the job is worth applying to before doing any editing.
+- **The score moves as you approve or skip.** A black line marked "Started at ##" shows your résumé before any edits. The solid bar is the score with your current choices, with the points added so far shown inside it. The faded stretch and "up to ## possible" show where you'd land if every suggestion were true and included. Updating costs nothing: the arithmetic happens in the panel, with no extra API calls.
+- **Each suggestion has a badge showing whether it matters.** A solid green `+#` covers a missing must-have, a light green `+#` adds something else the posting asks for, and 💄 means better wording with no change to your match. Suggested skills show their points too. Hover a badge for details.
+- **The title, cost estimate and score stay pinned** at the top of the panel while you scroll.
+- If you edit a suggestion's wording, its badge keeps the original points. Tailor calls cost slightly more, since the model returns the score details along with the suggestions.
+
+Worker 1.9.1:
+
+- **Two newer, cheaper models.** Fable 5.2 ($8/$40 per million tokens, released 2026-11-09) replaces Fable 5.1 ($10/$50). Haiku 5.5 ($0.10/$0.50, released 2026-10-07) replaces Haiku 4.5 ($1/$5) and adds effort control, which Haiku 4.5 didn't have. Sonnet 5.5 and Opus 5.5 are unchanged, and Opus 5.5 is still the default.
+- **Saved settings move over automatically.** If you had Fable 5.1 or Haiku 4.5 selected, you get Fable 5.2 or Haiku 5.5 the next time you open the panel. Older userscripts still sending the old IDs keep working.
+- **The per-run cost shown next to each model is now based on real runs.** A full run (Tailor + Build) averages about 23,000 tokens in and 9,000 out, so the notes now read roughly 1¢ (Haiku 5.5), 15¢ (Sonnet 5.5), 30¢ (Opus 5.5) and 55¢ (Fable 5.2). The old notes (5¢ / 10¢ / 20¢ / 50¢) were too low for Sonnet and Opus. Prices for those two haven't changed; only the estimate has. The running session total in the panel header always used your actual token counts and is unaffected.
+
 ## 1.9.5
 
 - **The exported PDF's filename now includes the hiring company.** The suggested name is `FirstName_LastName_Company_JobTitle_Resume` (for example `Banks_Smith_Acme_Senior_Data_Analyst_Resume`). The company comes from the job posting only. If the posting doesn't clearly name one, it's left out and the name looks the same as before. It's never taken from your own résumé.
