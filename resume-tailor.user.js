@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.10.2
+// @version      1.11.0
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.10.2';
+  var SCRIPT_VERSION = '1.11.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -143,6 +143,9 @@
     effortAnalyze: GM_getValue('rt_effortAnalyze', 'medium'),
     effortAssemble: GM_getValue('rt_effortAssemble', 'medium'),
     effortLinked: GM_getValue('rt_effortLinked', true),
+    // How Possible additions are shown: 'fill' (tap choices), 'ready'
+    // (finished wording) or 'own' (edit box with a keyword check).
+    suggStyle: GM_getValue('rt_suggStyle', 'fill'),
   };
   var KB = GM_getValue('rt_kb', null);
   if (typeof KB === 'string') { try { KB = JSON.parse(KB); } catch (e) { KB = null; } }
@@ -257,6 +260,24 @@
     #rt-root .gain-badge.plus{background:#e9f7ef;color:#15803d;border:1px solid #bfe6cd}
     #rt-root .gain-badge.must{background:#15803d;color:#fff;border:1px solid #15803d}
     #rt-root .gain-badge.lip{background:#fbeaf2;color:#b0306a;border:1px solid #f1c9dc}
+    #rt-root .sty-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 4px}
+    #rt-root .sty-row .sty-lbl{font-size:11.5px;font-weight:700;color:#374151}
+    #rt-root .sty-row .seg{margin-top:0}
+    #rt-root .sty-row .seg .chip{padding:5px 10px}
+    #rt-root .sty-hint{font-size:11.5px;color:#374151;margin:0 0 10px}
+    #rt-root .fill-prev{font-size:13px;line-height:1.55;margin:2px 0 8px;color:#1c2230}
+    #rt-root .fill-prev .gap{border-bottom:1.5px dashed #b45309;color:#b45309;font-weight:600;padding:0 2px}
+    #rt-root .fill-prev .got{font-weight:700;color:#15803d}
+    #rt-root .blank-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 7px}
+    #rt-root .blank-row .b-lbl{font-size:11.5px;font-weight:700;color:#374151}
+    #rt-root .opt{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #3b4cca;color:#3b4cca;background:#fff;cursor:pointer;user-select:none}
+    #rt-root .opt.on{background:#3b4cca;color:#fff}
+    #rt-root .blank-row .opt-other{width:auto;flex:1;min-width:120px;padding:4px 8px;font-size:12px}
+    #rt-root .ready-txt{font-size:13px;line-height:1.55;margin:2px 0 4px;color:#1c2230}
+    #rt-root .kw-line{font-size:11.5px;margin-top:6px;color:#374151}
+    #rt-root .kw{display:inline-block;border-radius:6px;padding:1px 7px;margin:0 4px 3px 0;font-weight:600}
+    #rt-root .kw.kept{background:#e9f7ef;color:#15803d}
+    #rt-root .kw.lost{background:#fdecec;color:#b91c1c}
     #rt-root .skill .sk-gain{margin-left:6px;font-size:11px;font-weight:750;color:#15803d}
     #rt-root .skill.on .sk-gain{color:#c8f3d6}
     #rt-root .rt-x{margin-left:auto;border:none;background:#f0f1f4;border-radius:7px;width:28px;height:28px;cursor:pointer;font-size:16px}
@@ -1655,7 +1676,7 @@
     });
   }
 
-  var SYS_A = 'You are an expert r\u00E9sum\u00E9 editor and career coach. Tailor the r\u00E9sum\u00E9 to the job WITHOUT exaggerating or fabricating.\nRULES:\n1. Rewrites must be grounded in the candidate\'s existing material.\n2. New bullets must be phrased as "Did you \u2026?" questions, never asserted as fact.\n3. Keep the candidate\'s voice: clear, factual, achievement-oriented. No buzzwords.\n4. Title suggestions reframe the real role in the target role\'s language while preserving honest seniority signal.\n5. highlight: one crisp Signature win sentence per role for top 2-3 roles.\n6. condensed: set true for older/less relevant roles.\n7. allCompanies must list EVERY employer/company name you can identify anywhere in the candidate\'s materials, in reverse-chronological order \u2014 not just the ones referenced in titleSuggestions or bulletRewrites. This list is used to populate a company picker, so it must be complete even for roles that didn\'t get a suggestion this run.\n8. targetJobTitle: the exact job title from the TARGET JOB DESCRIPTION (e.g. "Senior Data Analyst"), used only for naming the exported file. If the posting has no clear single title, use an empty string \u2014 do not guess.\n9. targetCompany: the hiring company\'s name from the TARGET JOB DESCRIPTION, used only for naming the exported file. If it isn\'t clearly stated, use an empty string \u2014 do not guess.\n10. Placeholders in phrasingIfYes (details only the candidate knows) must be a single short, descriptive ALL-CAPS token with words joined by underscores \u2014 no brackets, spaces, slashes or hyphens. Examples: EQUIPMENT, ISSUE_TYPE, PLC_HMI_CONTROL_PANEL, TESTING_OR_TROUBLESHOOTING.\n11. MATCH SCORE: list for yourself the distinct things the TARGET JOB DESCRIPTION asks for (skills, tools, experience, certifications, title language), each as must-have or nice-to-have. match.startScore = the share of them already clearly visible on the candidate\'s PRIMARY R\u00C9SUM\u00C9 AS IT STANDS, before any of your suggestions, as an integer 0-100 with must-haves counting double. Something supported only by supplementary material, or implied but not written on the r\u00E9sum\u00E9, does not count yet. match.missingMustHaves = short names (1-4 words) of must-haves NOT visible on it, most important first, max 6. Every titleSuggestion, bulletRewrite, newBulletPrompt and skills.toAdd item gets "gain": the integer number of points the score would rise if that one suggestion were applied (0 if it only improves wording and makes nothing new visible), and "closes": the exact missingMustHaves string it would cover, or "" if none. Do not count the same requirement in two gains; startScore plus all gains must not exceed 100. Be honest and conservative: do not inflate the start or the gains.\n12. SKILLS FIRST: the goal is to pass automated (ATS) keyword screening with as few edits as possible. When the TARGET JOB DESCRIPTION asks for something a keyword can show (a tool, technology, method, certification or domain term), cover it with a skills.toAdd item, worded the way the job description words it, and give the gain and closes to that item. Do not also write a newBulletPrompt for it, and do not count it in a bulletRewrite\'s gain. Every skills.toAdd item must be (a) supported by the candidate\'s materials, (b) asked for by the job description, (c) not already written on the primary r\u00E9sum\u00E9 and not in skills.prioritized, and (d) worth a gain of at least 1. If none qualify, return an empty toAdd; never pad it. newBulletPrompts are a last resort: write one only when a requirement has to be shown as work experience (years doing something, scope, a result) and no skill or rewrite can cover it; return an empty array rather than a weak one. titleSuggestions and bulletRewrites are chosen as before.\nOutput ONLY valid JSON. No markdown, no preamble.';
+  var SYS_A = 'You are an expert r\u00E9sum\u00E9 editor and career coach. Tailor the r\u00E9sum\u00E9 to the job WITHOUT exaggerating or fabricating.\nRULES:\n1. Rewrites must be grounded in the candidate\'s existing material.\n2. New bullets must be phrased as "Did you \u2026?" questions, never asserted as fact.\n3. Keep the candidate\'s voice: clear, factual, achievement-oriented. No buzzwords.\n4. Title suggestions reframe the real role in the target role\'s language while preserving honest seniority signal.\n5. highlight: one crisp Signature win sentence per role for top 2-3 roles.\n6. condensed: set true for older/less relevant roles.\n7. allCompanies must list EVERY employer/company name you can identify anywhere in the candidate\'s materials, in reverse-chronological order \u2014 not just the ones referenced in titleSuggestions or bulletRewrites. This list is used to populate a company picker, so it must be complete even for roles that didn\'t get a suggestion this run.\n8. targetJobTitle: the exact job title from the TARGET JOB DESCRIPTION (e.g. "Senior Data Analyst"), used only for naming the exported file. If the posting has no clear single title, use an empty string \u2014 do not guess.\n9. targetCompany: the hiring company\'s name from the TARGET JOB DESCRIPTION, used only for naming the exported file. If it isn\'t clearly stated, use an empty string \u2014 do not guess.\n10. Placeholders in phrasingIfYes (details only the candidate knows) must be a single short, descriptive ALL-CAPS token with words joined by underscores \u2014 no brackets, spaces, slashes or hyphens. Examples: EQUIPMENT, ISSUE_TYPE, PLC_HMI_CONTROL_PANEL, TESTING_OR_TROUBLESHOOTING.\n11. MATCH SCORE: list for yourself the distinct things the TARGET JOB DESCRIPTION asks for (skills, tools, experience, certifications, title language), each as must-have or nice-to-have. match.startScore = the share of them already clearly visible on the candidate\'s PRIMARY R\u00C9SUM\u00C9 AS IT STANDS, before any of your suggestions, as an integer 0-100 with must-haves counting double. Something supported only by supplementary material, or implied but not written on the r\u00E9sum\u00E9, does not count yet. match.missingMustHaves = short names (1-4 words) of must-haves NOT visible on it, most important first, max 6. Every titleSuggestion, bulletRewrite, newBulletPrompt and skills.toAdd item gets "gain": the integer number of points the score would rise if that one suggestion were applied (0 if it only improves wording and makes nothing new visible), and "closes": the exact missingMustHaves string it would cover, or "" if none. Do not count the same requirement in two gains; startScore plus all gains must not exceed 100. Be honest and conservative: do not inflate the start or the gains.\n12. SKILLS FIRST: the goal is to pass automated (ATS) keyword screening with as few edits as possible. When the TARGET JOB DESCRIPTION asks for something a keyword can show (a tool, technology, method, certification or domain term), cover it with a skills.toAdd item, worded the way the job description words it, and give the gain and closes to that item. Do not also write a newBulletPrompt for it, and do not count it in a bulletRewrite\'s gain. Every skills.toAdd item must be (a) supported by the candidate\'s materials, (b) asked for by the job description, (c) not already written on the primary r\u00E9sum\u00E9 and not in skills.prioritized, and (d) worth a gain of at least 1. If none qualify, return an empty toAdd; never pad it. newBulletPrompts are a last resort: write one only when a requirement has to be shown as work experience (years doing something, scope, a result) and no skill or rewrite can cover it; return an empty array rather than a weak one. titleSuggestions and bulletRewrites are chosen as before.\n13. MUST-HAVES FIRST: for every must-have in match.missingMustHaves, look for an honest way to close it, trying in this order: a skills.toAdd item; then a bulletRewrite or titleSuggestion that brings its wording onto the r\u00E9sum\u00E9; then, only if it has to be shown as work experience, a newBulletPrompt. Set that item\'s closes to the must-have. In every array list the items that close a must-have first, and spend the array\'s room on must-haves before nice-to-haves. If nothing in the materials supports a must-have, leave it uncovered; never invent support.\n14. Each newBulletPrompt also carries three things. blanks: one entry per placeholder token in phrasingIfYes, as {"token","options"}, where options are 2-4 short fill-ins the candidate can tap, worded with the TARGET JOB DESCRIPTION\'s own terms wherever the truth allows (for a quantity give 3 plausible round values); the options of one blank are alternatives of the same kind and may include one combined option. readyMade: the same bullet written out in full with no placeholders, in the job description\'s wording, using ONLY facts the candidate\'s materials support and leaving out any detail only the candidate knows; use "" if it cannot be written honestly without such a detail. keywords: up to 5 exact words or short phrases from the job description that the bullet should contain to pass keyword screening, each of which appears in phrasingIfYes, in an option, or in readyMade.\nOutput ONLY valid JSON. No markdown, no preamble.';
   var SYS_B = 'You are an expert r\u00E9sum\u00E9 editor. Assemble the FINAL tailored r\u00E9sum\u00E9 as structured JSON applying ONLY approved changes. Do not invent content. Preserve real employers, dates, education, metrics. Keep the voice factual and clean.\nORDER RULE (important): List roles in "experience" in the SAME ORDER they appear in the candidate\'s source materials. Do not reorder, re-rank, or re-sort roles by date or relevance \u2014 preserve the original sequence exactly.\nSUMMARY RULE (important): The candidate\'s materials include an ORIGINAL SUMMARY/PROFILE field. Use that as your starting point and edit it minimally to tune emphasis toward the job \u2014 reorder or lightly reword, do not rewrite from scratch, do not pull in unrelated material from LinkedIn or other sources, do not pad with generic resume language. Target 2-3 sentences, hard cap 60 words. If no original summary exists in the materials, write a short one in the candidate\'s own voice from their real experience only.\nHIGHLIGHT RULE (important): For each role, "highlight" is a standalone callout, NOT a duplicate of any line in "bullets". If a role\'s best metric/achievement is the basis for the highlight, the matching bullet in "bullets" must either be removed (if it would be 100% redundant) or rewritten to cover different specifics not already stated in the highlight. Never let the highlight sentence and a bullet sentence repeat the same wording back to back.\nDATES RULE (important): Each role gets two date strings. "dates" is YEARS ONLY (e.g. "2021 - Present", "2018 - 2021"), never with months. "datesFull" is the same range with a three-letter month before each year (e.g. "Mar 2021 - Present") wherever the candidate\'s materials state the month for that role; where a month is not stated, use the year alone for that end of the range. NEVER guess, default or invent a month.\nOutput ONLY valid JSON, no markdown.';
 
   /* ============ analyze ============ */
@@ -1671,7 +1692,7 @@
     activeAbort = new AbortController();
     rt$('rt-analyzeStop').classList.remove('hidden');
     rt$('rt-match').classList.add('hidden');
-    var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "targetCompany":"",\n  "match":{"startScore":0,"missingMustHaves":["..."]},\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":"","gain":0,"closes":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":"","gain":0,"closes":""}],\n  "newBulletPrompts":[{"id":"n1","question":"Did you \u2026?","phrasingIfYes":"","rationale":"","gain":0,"closes":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":"","gain":0,"closes":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array, except allCompanies, which must be complete, and skills.toAdd, which may have up to 10. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
+    var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "targetCompany":"",\n  "match":{"startScore":0,"missingMustHaves":["..."]},\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":"","gain":0,"closes":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":"","gain":0,"closes":""}],\n  "newBulletPrompts":[{"id":"n1","company":"","question":"Did you \u2026?","phrasingIfYes":"","blanks":[{"token":"","options":["..."]}],"readyMade":"","keywords":["..."],"rationale":"","gain":0,"closes":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":"","gain":0,"closes":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array, except allCompanies, which must be complete, and skills.toAdd, which may have up to 10. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
     callClaudeAndParse(SYS_A, user, ANALYZE_MAX_TOKENS, 'analyze').then(function(parsed) {
       ANALYSIS = parsed;
       (ANALYSIS.newBulletPrompts || []).forEach(function(n) { n.phrasingIfYes = normalizePlaceholders(n.phrasingIfYes); });
@@ -1744,14 +1765,258 @@
     btn.appendChild(document.createTextNode(label));
   }
 
+  /* ============ possible additions: suggestion styles ============
+     One Tailor call returns, for each "Did you …?" addition, everything the
+     three styles need: the bullet with ALL_CAPS blanks, tap choices for each
+     blank in the posting's wording, a ready-made version with no blanks, and
+     the posting keywords the bullet should keep. The styles are three views
+     of that same data, so switching is instant and costs no API call. */
+  // [key, label, hint]
+  var SUGG_STYLES = [
+    ['fill', 'Tap to fill', 'Tap the choices that are true. They use the posting’s own words, so the keywords stay in.'],
+    ['ready', 'Ready-made', 'Finished wording in the posting’s words. Tap Include if it’s true.'],
+    ['own', 'Write my own', 'Edit freely. The line under each box shows which of the posting’s keywords you’ve kept.']
+  ];
+  function suggStyle() {
+    return SUGG_STYLES.some(function(s) { return s[0] === CFG.suggStyle; }) ? CFG.suggStyle : 'fill';
+  }
+  function normToken(t) {
+    return String(t == null ? '' : t).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+  // A blank's token as a whole word. Tokens are [A-Z0-9_] only, so safe in a RegExp.
+  function tokenRe(tokens, flags) {
+    return new RegExp('(^|[^A-Z0-9_])(' + tokens.join('|') + ')(?![A-Z0-9_])', flags || '');
+  }
+  // Text that still holds a blank nobody filled (WORDS_LIKE_THIS, or one long ALL-CAPS word).
+  function looksUnfilled(text) { return /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[A-Z]{6,}\b/.test(text); }
+  function humanToken(tok) { var s = tok.toLowerCase().replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
+  function strList(list, max) {
+    var seen = {}, out = [];
+    (Array.isArray(list) ? list : []).forEach(function(x) {
+      if (typeof x !== 'string' && typeof x !== 'number') { return; }
+      var v = String(x).replace(/\s+/g, ' ').trim(), k = v.toLowerCase();
+      if (!v || seen[k] || out.length >= max) { return; }
+      seen[k] = true; out.push(v);
+    });
+    return out;
+  }
+  // Tidy the response's additions in place: every card gets a usable id,
+  // blanks that really appear in its wording, and a ready-made version only
+  // if it has no blank left in it. A response without the newer fields still
+  // works: its cards fall back to a plain edit box.
+  function cleanNews(analysis) {
+    var out = [], ids = {};
+    (Array.isArray(analysis.newBulletPrompts) ? analysis.newBulletPrompts : []).forEach(function(n, i) {
+      if (!n || typeof n !== 'object') { return; }
+      var tpl = normalizePlaceholders(typeof n.phrasingIfYes === 'string' ? n.phrasingIfYes : '').trim();
+      var q = typeof n.question === 'string' ? n.question.trim() : '';
+      if (!tpl) { return; }
+      var id = (typeof n.id === 'string' && /^[A-Za-z0-9_-]+$/.test(n.id)) ? n.id : 'n' + (i + 1);
+      while (ids[id]) { id += 'x'; }
+      ids[id] = true;
+      n.id = id; n.question = q || 'Is this true for you?'; n.phrasingIfYes = tpl;
+      var blanks = [], seenTok = {};
+      (Array.isArray(n.blanks) ? n.blanks : []).forEach(function(b) {
+        var tok = normToken(b && b.token);
+        if (!tok || seenTok[tok] || !tokenRe([tok]).test(tpl)) { return; }
+        var opts = strList(b.options, 5);
+        if (!opts.length) { return; }
+        seenTok[tok] = true; blanks.push({ token: tok, options: opts });
+      });
+      n.blanks = blanks;
+      var ready = typeof n.readyMade === 'string' ? n.readyMade.replace(/\s+/g, ' ').trim() : '';
+      var readyHasBlank = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\[[^\]]*\]/.test(ready) ||
+        (blanks.length && tokenRe(blanks.map(function(b) { return b.token; })).test(ready));
+      n.readyMade = readyHasBlank ? '' : ready;
+      n.keywords = strList(n.keywords, 6);
+      out.push(n);
+    });
+    analysis.newBulletPrompts = out;
+    return out;
+  }
+  // The bullet with each picked blank filled in; unpicked blanks stay as tokens.
+  function fillText(n, d) {
+    var t = n.phrasingIfYes;
+    n.blanks.forEach(function(b) {
+      var v = d.picks[b.token];
+      if (v) { t = t.replace(tokenRe([b.token], 'g'), function(m, pre) { return pre + v; }); }
+    });
+    return t;
+  }
+  function allPicked(n, d) { return n.blanks.every(function(b) { return !!d.picks[b.token]; }); }
+  // How one card is shown under the chosen style. A card that can't offer the
+  // chosen style falls back to the nearest one that works for it.
+  function cardMode(n, style) {
+    if (style === 'own') { return 'own'; }
+    if (style === 'ready' && n.readyMade) { return 'ready'; }
+    if (n.blanks.length) { return 'fill'; }
+    return looksUnfilled(n.phrasingIfYes) ? 'own' : 'ready';
+  }
+  function newsText(n, d, mode) {
+    if (mode === 'own') { return d.own != null ? d.own : fillText(n, d); }
+    if (mode === 'ready') { return n.readyMade || n.phrasingIfYes; }
+    return fillText(n, d);
+  }
+  function keptKeyword(text, kw) { return text.toLowerCase().indexOf(kw.toLowerCase()) !== -1; }
+  // Include or skip one addition, keeping its Include/Skip buttons, the
+  // card's dimming and the match score in step.
+  function setNewsStatus(id, approved) {
+    var d = DECISIONS.news[id];
+    if (!d) { return; }
+    d.status = approved ? 'approved' : 'skipped';
+    var rev = root.querySelector('#rev-news-' + id);
+    if (rev) {
+      var yes = rev.querySelector('[data-act="seg-yes"]'), no = rev.querySelector('[data-act="seg-no"]');
+      if (yes) { yes.className = 'chip' + (approved ? ' on-ok' : ''); }
+      if (no) { no.className = 'chip' + (approved ? '' : ' on-skip'); }
+      rev.classList.toggle('is-skip', !approved);
+    }
+    renderMatch();
+  }
+  var NEWS_COMPANIES = [];
+  function renderNews() {
+    var newSec = rt$('rt-newSec');
+    clearEl(newSec);
+    var ns = (ANALYSIS && Array.isArray(ANALYSIS.newBulletPrompts)) ? ANALYSIS.newBulletPrompts : [];
+    if (!ns.length || !DECISIONS) { return; }
+    var style = suggStyle();
+
+    var nh = mk('div', { cls: 'sec-title' }); nh.textContent = 'Possible additions — only if true'; newSec.appendChild(nh);
+    var styRow = mk('div', { cls: 'sty-row' });
+    var styLbl = mk('span', { cls: 'sty-lbl' }); styLbl.textContent = 'Suggestion style';
+    var stySeg = mk('div', { cls: 'seg' });
+    var hint = mk('p', { cls: 'sty-hint' });
+    SUGG_STYLES.forEach(function(s) {
+      var c = mk('span', { cls: 'chip' + (s[0] === style ? ' on-ok' : '') });
+      c.textContent = s[1]; c.title = s[2];
+      c.addEventListener('click', function() {
+        if (suggStyle() === s[0]) { return; }
+        CFG.suggStyle = s[0];
+        GM_setValue('rt_suggStyle', s[0]);
+        renderNews();
+      });
+      stySeg.appendChild(c);
+      if (s[0] === style) { hint.textContent = s[2]; }
+    });
+    styRow.appendChild(styLbl); styRow.appendChild(stySeg);
+    newSec.appendChild(styRow); newSec.appendChild(hint);
+
+    ns.forEach(function(n) {
+      var d = DECISIONS.news[n.id];
+      if (!d) { return; }
+      var mode = cardMode(n, style);
+      d.text = newsText(n, d, mode);
+
+      var coSel = mk('select'); coSel.style.cssText = 'margin-bottom:6px;font-size:12px';
+      NEWS_COMPANIES.forEach(function(co) {
+        var opt = mk('option'); opt.value = co; opt.textContent = co;
+        if (co === d.company) { opt.selected = true; }
+        coSel.appendChild(opt);
+      });
+      if (d.company && NEWS_COMPANIES.indexOf(d.company) === -1) {
+        var opt2 = mk('option'); opt2.value = d.company; opt2.textContent = d.company; opt2.selected = true;
+        coSel.insertBefore(opt2, coSel.firstChild);
+      }
+      coSel.addEventListener('change', function() { d.company = coSel.value; });
+
+      var rev = mkRev('rev-news-' + n.id, n.question, null, null, n.rationale || '', n);
+      if (d.status !== 'approved') { rev.classList.add('is-skip'); }
+      var anchor = rev.querySelector('.why') || null;
+      rev.insertBefore(coSel, anchor);
+
+      var body = mk('div');
+      // Any change the person makes to a card means they want it in.
+      var include = function() { if (d.status !== 'approved') { setNewsStatus(n.id, true); } };
+
+      if (mode === 'fill') {
+        var toks = n.blanks.map(function(b) { return b.token; });
+        var prev = mk('p', { cls: 'fill-prev' });
+        var paintPrev = function() {
+          clearEl(prev);
+          var re = tokenRe(toks, 'g'), last = 0, m;
+          while ((m = re.exec(n.phrasingIfYes))) {
+            var at = m.index + m[1].length;
+            prev.appendChild(document.createTextNode(n.phrasingIfYes.slice(last, at)));
+            var v = d.picks[m[2]];
+            var sp = mk('span', { cls: v ? 'got' : 'gap' }); sp.textContent = v || humanToken(m[2]);
+            prev.appendChild(sp);
+            last = at + m[2].length;
+          }
+          prev.appendChild(document.createTextNode(n.phrasingIfYes.slice(last)));
+        };
+        body.appendChild(prev);
+        n.blanks.forEach(function(b) {
+          var row = mk('div', { cls: 'blank-row' });
+          var bl = mk('span', { cls: 'b-lbl' }); bl.textContent = humanToken(b.token);
+          row.appendChild(bl);
+          var chips = [];
+          var other = mk('input', { type: 'text', cls: 'opt-other', placeholder: 'or type your own…' });
+          var picked = function(v) {
+            if (v) { d.picks[b.token] = v; } else { delete d.picks[b.token]; }
+            chips.forEach(function(c) { c.classList.toggle('on', c.textContent === d.picks[b.token]); });
+            d.text = fillText(n, d);
+            paintPrev();
+            // A bullet with a blank left in it isn't ready to go on the r\u00E9sum\u00E9.
+            if (allPicked(n, d)) { include(); } else if (d.status === 'approved') { setNewsStatus(n.id, false); }
+          };
+          b.options.forEach(function(o) {
+            var c = mk('span', { cls: 'opt' + (d.picks[b.token] === o ? ' on' : '') }); c.textContent = o;
+            c.addEventListener('click', function() { other.value = ''; picked(d.picks[b.token] === o ? '' : o); });
+            chips.push(c); row.appendChild(c);
+          });
+          if (d.picks[b.token] && b.options.indexOf(d.picks[b.token]) === -1) { other.value = d.picks[b.token]; }
+          other.addEventListener('input', function() { picked(other.value.replace(/\s+/g, ' ').trim()); });
+          row.appendChild(other);
+          body.appendChild(row);
+        });
+        paintPrev();
+        if (style === 'ready') {
+          var fb1 = mk('p', { cls: 'note' }); fb1.textContent = 'No ready-made wording for this one: it needs a detail only you know.';
+          body.appendChild(fb1);
+        }
+      } else if (mode === 'ready') {
+        var rp = mk('p', { cls: 'ready-txt' }); rp.textContent = d.text;
+        body.appendChild(rp);
+      } else {
+        var ta = mk('textarea', { rows: '2' }); ta.value = d.text;
+        var kwLine = mk('div', { cls: 'kw-line' });
+        var paintKw = function() {
+          clearEl(kwLine);
+          if (!n.keywords.length) { return; }
+          var lead = mk('span'); lead.textContent = 'Posting keywords: '; kwLine.appendChild(lead);
+          n.keywords.forEach(function(kw) {
+            var kept = keptKeyword(ta.value, kw);
+            var k = mk('span', { cls: 'kw ' + (kept ? 'kept' : 'lost') });
+            k.textContent = (kept ? '✓ ' : '✗ ') + kw;
+            k.title = kept ? 'Still in your wording' : 'Not in your wording: an automated screen looking for this won’t find it here';
+            kwLine.appendChild(k);
+          });
+        };
+        ta.addEventListener('input', function() {
+          d.own = ta.value; d.text = ta.value;
+          paintKw();
+          if (ta.value.trim()) { include(); }
+        });
+        body.appendChild(ta); body.appendChild(kwLine);
+        paintKw();
+        if (style !== 'own') {
+          var fb2 = mk('p', { cls: 'note' }); fb2.textContent = 'No tap choices came back for this one, so edit the wording directly.';
+          body.appendChild(fb2);
+        }
+      }
+      rev.insertBefore(body, anchor);
+      rev.appendChild(mkSegChoice('news', n.id, 'Include', 'Skip', d.status === 'approved'));
+      newSec.appendChild(rev);
+    });
+  }
+
   function renderReview() {
     DECISIONS = { titles: {}, bullets: {}, news: {}, skills: { keep: new Set(), add: new Set() } };
 
     var titleSec = rt$('rt-titleSec');
     var bulletSec = rt$('rt-bulletSec');
-    var newSec = rt$('rt-newSec');
     var skillSec = rt$('rt-skillSec');
-    clearEl(titleSec); clearEl(bulletSec); clearEl(newSec); clearEl(skillSec);
+    clearEl(titleSec); clearEl(bulletSec); clearEl(skillSec);
 
     // Title adjustments
     var ts = ANALYSIS.titleSuggestions || [];
@@ -1781,8 +2046,8 @@
       });
     }
 
-    // New bullet prompts
-    var ns = ANALYSIS.newBulletPrompts || [];
+    // Possible additions (new bullet prompts)
+    var ns = cleanNews(ANALYSIS);
     // Prefer the model's full employer list (covers every real company in
     // the candidate's materials, not just ones with a suggestion this run).
     // Fall back to deriving from titleSuggestions/bulletRewrites/the prompts
@@ -1794,35 +2059,12 @@
       (ANALYSIS.bulletRewrites || []).forEach(function(b) { if (b.company && companies.indexOf(b.company) === -1) { companies.push(b.company); } });
     }
     ns.forEach(function(n) { if (n.company && companies.indexOf(n.company) === -1) { companies.push(n.company); } });
-
-    if (ns.length) {
-      var nh = mk('div', { cls: 'sec-title' }); nh.textContent = 'Possible additions \u2014 only if true'; newSec.appendChild(nh);
-      ns.forEach(function(n) {
-        var defaultCo = n.company || (companies[0] || '');
-        DECISIONS.news[n.id] = { status: 'skipped', text: n.phrasingIfYes, company: defaultCo };
-        var ta2 = mk('textarea', { rows: '2' }); ta2.textContent = n.phrasingIfYes;
-        ta2.dataset.edit = ''; ta2.dataset.k = 'news'; ta2.dataset.id = n.id;
-
-        var coSel = mk('select'); coSel.style.cssText = 'margin-bottom:6px;font-size:12px';
-        companies.forEach(function(co) {
-          var opt = mk('option'); opt.value = co; opt.textContent = co;
-          if (co === defaultCo) { opt.selected = true; }
-          coSel.appendChild(opt);
-        });
-        if (defaultCo && companies.indexOf(defaultCo) === -1) {
-          var opt2 = mk('option'); opt2.value = defaultCo; opt2.textContent = defaultCo; opt2.selected = true;
-          coSel.insertBefore(opt2, coSel.firstChild);
-        }
-        coSel.addEventListener('change', function() { DECISIONS.news[n.id].company = coSel.value; });
-
-        var rev = mkRev('rev-news-' + n.id, n.question, null, null, n.rationale || '', n);
-        rev.classList.add('is-skip');
-        rev.insertBefore(coSel, rev.querySelector('.why') || null);
-        rev.insertBefore(ta2, rev.querySelector('.why') || null);
-        rev.appendChild(mkSegChoice('news', n.id, 'Include', 'Skip', false));
-        newSec.appendChild(rev);
-      });
-    }
+    NEWS_COMPANIES = companies;
+    // picks: the choice tapped for each blank. own: the wording once edited by hand.
+    ns.forEach(function(n) {
+      DECISIONS.news[n.id] = { status: 'skipped', text: n.phrasingIfYes, company: n.company || (companies[0] || ''), picks: {}, own: null };
+    });
+    renderNews();
 
     // Skills
     var sk = cleanSkills(ANALYSIS);

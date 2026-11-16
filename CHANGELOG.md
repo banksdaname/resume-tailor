@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.11.0
+
+- **Suggestion styles for Possible additions.** A toggle under the section title offers three ways to handle a "Did you…?" addition, and remembers your choice. Switching is instant and keeps what you've done.
+  - **Tap to fill** (the default): the bullet shows with each blank underlined and a row of choices for it, worded the way the posting words them, plus a box to type your own. Picking the last blank includes the addition.
+  - **Ready-made**: finished wording in the posting's words, using only what your materials support. One tap on Include.
+  - **Write my own**: an edit box with a line under it marking each of the posting's keywords ✓ kept or ✗ lost as you type, so you can see when a rewording drops a word an automated screen may look for.
+- **Must-haves come first.** For each must-have you're missing, Tailor now looks for a way to cover it: a skill first, then a bullet rewrite or title change, and a new bullet only when it has to be shown as work experience. Suggestions that cover a must-have are listed first in each section. If nothing in your materials supports one, it stays on the missing list; nothing is invented.
+- A half-filled addition can't reach your résumé: clearing one of its blanks switches it back to Skip. Tailor calls cost slightly more, since each addition comes back with its choices, keywords and ready-made wording.
+
 ## 1.10.2
 
 - **Skills come first, and they do more of the work.** The Skills section is now at the top of the review, above title changes. When a posting asks for something a keyword can show (a tool, a method, a certification), the suggestion is now a skill you add with one tap, worded the way the posting words it, instead of a bullet you'd have to answer and edit.
