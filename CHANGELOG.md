@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.1
+
+- **Include now stays on.** If you tapped Include on a possible addition and then picked a choice for one of its blanks, the card flipped back to Skip, and the next pick flipped it on again. Only your own tap on Skip turns an addition off now. This also means an addition you've included keeps any blank you haven't filled, shown underlined in amber, so fill or remove it before building.
+- **Ready-made covers every addition.** Switching to Ready-made changed only the additions that came back with finished wording, which was often just the first. Tailor now writes finished wording for every addition, leaving out details only you know (a percentage, a count) instead of skipping the wording altogether. Run Tailor again to get it for a posting you've already tailored.
+
 ## 1.11.0
 
 - **Suggestion styles for Possible additions.** A toggle under the section title offers three ways to handle a "Did you…?" addition, and remembers your choice. Switching is instant and keeps what you've done.
