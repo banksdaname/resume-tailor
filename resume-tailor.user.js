@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.10.1
+// @version      1.10.2
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.10.1';
+  var SCRIPT_VERSION = '1.10.2';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -524,10 +524,10 @@
   var reviewCard = ap(mk('div', { cls: 'card hidden', id: 'rt-reviewCard' }),
     ap(mk('h2'), document.createTextNode('\u2705 Step 2 \u00B7 Review')),
     bannerDiv,
+    mk('div', { id: 'rt-skillSec' }),
     mk('div', { id: 'rt-titleSec' }),
     mk('div', { id: 'rt-bulletSec' }),
     mk('div', { id: 'rt-newSec' }),
-    mk('div', { id: 'rt-skillSec' }),
     ap(mk('div', { cls: 'row' }), mkBtn('primary', 'rt-assemble', 'Build my r\u00E9sum\u00E9 \u2192'), assembleStopBtn),
     mk('div', { id: 'rt-assembleErr' })
   );
@@ -1655,7 +1655,7 @@
     });
   }
 
-  var SYS_A = 'You are an expert r\u00E9sum\u00E9 editor and career coach. Tailor the r\u00E9sum\u00E9 to the job WITHOUT exaggerating or fabricating.\nRULES:\n1. Rewrites must be grounded in the candidate\'s existing material.\n2. New bullets must be phrased as "Did you \u2026?" questions, never asserted as fact.\n3. Keep the candidate\'s voice: clear, factual, achievement-oriented. No buzzwords.\n4. Title suggestions reframe the real role in the target role\'s language while preserving honest seniority signal.\n5. highlight: one crisp Signature win sentence per role for top 2-3 roles.\n6. condensed: set true for older/less relevant roles.\n7. allCompanies must list EVERY employer/company name you can identify anywhere in the candidate\'s materials, in reverse-chronological order \u2014 not just the ones referenced in titleSuggestions or bulletRewrites. This list is used to populate a company picker, so it must be complete even for roles that didn\'t get a suggestion this run.\n8. targetJobTitle: the exact job title from the TARGET JOB DESCRIPTION (e.g. "Senior Data Analyst"), used only for naming the exported file. If the posting has no clear single title, use an empty string \u2014 do not guess.\n9. targetCompany: the hiring company\'s name from the TARGET JOB DESCRIPTION, used only for naming the exported file. If it isn\'t clearly stated, use an empty string \u2014 do not guess.\n10. Placeholders in phrasingIfYes (details only the candidate knows) must be a single short, descriptive ALL-CAPS token with words joined by underscores \u2014 no brackets, spaces, slashes or hyphens. Examples: EQUIPMENT, ISSUE_TYPE, PLC_HMI_CONTROL_PANEL, TESTING_OR_TROUBLESHOOTING.\n11. MATCH SCORE: list for yourself the distinct things the TARGET JOB DESCRIPTION asks for (skills, tools, experience, certifications, title language), each as must-have or nice-to-have. match.startScore = the share of them already clearly evidenced in the candidate\'s materials AS THEY STAND, before any of your suggestions, as an integer 0-100 with must-haves counting double. match.missingMustHaves = short names (1-4 words) of must-haves NOT evidenced, most important first, max 6. Every titleSuggestion, bulletRewrite, newBulletPrompt and skills.toAdd item gets "gain": the integer number of points the score would rise if that one suggestion were applied (0 if it only improves wording and makes nothing new visible), and "closes": the exact missingMustHaves string it would cover, or "" if none. Do not count the same requirement in two gains; startScore plus all gains must not exceed 100. Be honest and conservative: do not inflate the start or the gains.\nOutput ONLY valid JSON. No markdown, no preamble.';
+  var SYS_A = 'You are an expert r\u00E9sum\u00E9 editor and career coach. Tailor the r\u00E9sum\u00E9 to the job WITHOUT exaggerating or fabricating.\nRULES:\n1. Rewrites must be grounded in the candidate\'s existing material.\n2. New bullets must be phrased as "Did you \u2026?" questions, never asserted as fact.\n3. Keep the candidate\'s voice: clear, factual, achievement-oriented. No buzzwords.\n4. Title suggestions reframe the real role in the target role\'s language while preserving honest seniority signal.\n5. highlight: one crisp Signature win sentence per role for top 2-3 roles.\n6. condensed: set true for older/less relevant roles.\n7. allCompanies must list EVERY employer/company name you can identify anywhere in the candidate\'s materials, in reverse-chronological order \u2014 not just the ones referenced in titleSuggestions or bulletRewrites. This list is used to populate a company picker, so it must be complete even for roles that didn\'t get a suggestion this run.\n8. targetJobTitle: the exact job title from the TARGET JOB DESCRIPTION (e.g. "Senior Data Analyst"), used only for naming the exported file. If the posting has no clear single title, use an empty string \u2014 do not guess.\n9. targetCompany: the hiring company\'s name from the TARGET JOB DESCRIPTION, used only for naming the exported file. If it isn\'t clearly stated, use an empty string \u2014 do not guess.\n10. Placeholders in phrasingIfYes (details only the candidate knows) must be a single short, descriptive ALL-CAPS token with words joined by underscores \u2014 no brackets, spaces, slashes or hyphens. Examples: EQUIPMENT, ISSUE_TYPE, PLC_HMI_CONTROL_PANEL, TESTING_OR_TROUBLESHOOTING.\n11. MATCH SCORE: list for yourself the distinct things the TARGET JOB DESCRIPTION asks for (skills, tools, experience, certifications, title language), each as must-have or nice-to-have. match.startScore = the share of them already clearly visible on the candidate\'s PRIMARY R\u00C9SUM\u00C9 AS IT STANDS, before any of your suggestions, as an integer 0-100 with must-haves counting double. Something supported only by supplementary material, or implied but not written on the r\u00E9sum\u00E9, does not count yet. match.missingMustHaves = short names (1-4 words) of must-haves NOT visible on it, most important first, max 6. Every titleSuggestion, bulletRewrite, newBulletPrompt and skills.toAdd item gets "gain": the integer number of points the score would rise if that one suggestion were applied (0 if it only improves wording and makes nothing new visible), and "closes": the exact missingMustHaves string it would cover, or "" if none. Do not count the same requirement in two gains; startScore plus all gains must not exceed 100. Be honest and conservative: do not inflate the start or the gains.\n12. SKILLS FIRST: the goal is to pass automated (ATS) keyword screening with as few edits as possible. When the TARGET JOB DESCRIPTION asks for something a keyword can show (a tool, technology, method, certification or domain term), cover it with a skills.toAdd item, worded the way the job description words it, and give the gain and closes to that item. Do not also write a newBulletPrompt for it, and do not count it in a bulletRewrite\'s gain. Every skills.toAdd item must be (a) supported by the candidate\'s materials, (b) asked for by the job description, (c) not already written on the primary r\u00E9sum\u00E9 and not in skills.prioritized, and (d) worth a gain of at least 1. If none qualify, return an empty toAdd; never pad it. newBulletPrompts are a last resort: write one only when a requirement has to be shown as work experience (years doing something, scope, a result) and no skill or rewrite can cover it; return an empty array rather than a weak one. titleSuggestions and bulletRewrites are chosen as before.\nOutput ONLY valid JSON. No markdown, no preamble.';
   var SYS_B = 'You are an expert r\u00E9sum\u00E9 editor. Assemble the FINAL tailored r\u00E9sum\u00E9 as structured JSON applying ONLY approved changes. Do not invent content. Preserve real employers, dates, education, metrics. Keep the voice factual and clean.\nORDER RULE (important): List roles in "experience" in the SAME ORDER they appear in the candidate\'s source materials. Do not reorder, re-rank, or re-sort roles by date or relevance \u2014 preserve the original sequence exactly.\nSUMMARY RULE (important): The candidate\'s materials include an ORIGINAL SUMMARY/PROFILE field. Use that as your starting point and edit it minimally to tune emphasis toward the job \u2014 reorder or lightly reword, do not rewrite from scratch, do not pull in unrelated material from LinkedIn or other sources, do not pad with generic resume language. Target 2-3 sentences, hard cap 60 words. If no original summary exists in the materials, write a short one in the candidate\'s own voice from their real experience only.\nHIGHLIGHT RULE (important): For each role, "highlight" is a standalone callout, NOT a duplicate of any line in "bullets". If a role\'s best metric/achievement is the basis for the highlight, the matching bullet in "bullets" must either be removed (if it would be 100% redundant) or rewritten to cover different specifics not already stated in the highlight. Never let the highlight sentence and a bullet sentence repeat the same wording back to back.\nDATES RULE (important): Each role gets two date strings. "dates" is YEARS ONLY (e.g. "2021 - Present", "2018 - 2021"), never with months. "datesFull" is the same range with a three-letter month before each year (e.g. "Mar 2021 - Present") wherever the candidate\'s materials state the month for that role; where a month is not stated, use the year alone for that end of the range. NEVER guess, default or invent a month.\nOutput ONLY valid JSON, no markdown.';
 
   /* ============ analyze ============ */
@@ -1671,7 +1671,7 @@
     activeAbort = new AbortController();
     rt$('rt-analyzeStop').classList.remove('hidden');
     rt$('rt-match').classList.add('hidden');
-    var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "targetCompany":"",\n  "match":{"startScore":0,"missingMustHaves":["..."]},\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":"","gain":0,"closes":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":"","gain":0,"closes":""}],\n  "newBulletPrompts":[{"id":"n1","question":"Did you \u2026?","phrasingIfYes":"","rationale":"","gain":0,"closes":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":"","gain":0,"closes":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array except allCompanies, which must be complete. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
+    var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "targetCompany":"",\n  "match":{"startScore":0,"missingMustHaves":["..."]},\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":"","gain":0,"closes":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":"","gain":0,"closes":""}],\n  "newBulletPrompts":[{"id":"n1","question":"Did you \u2026?","phrasingIfYes":"","rationale":"","gain":0,"closes":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":"","gain":0,"closes":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array, except allCompanies, which must be complete, and skills.toAdd, which may have up to 10. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
     callClaudeAndParse(SYS_A, user, ANALYZE_MAX_TOKENS, 'analyze').then(function(parsed) {
       ANALYSIS = parsed;
       (ANALYSIS.newBulletPrompts || []).forEach(function(n) { n.phrasingIfYes = normalizePlaceholders(n.phrasingIfYes); });
@@ -1825,17 +1825,25 @@
     }
 
     // Skills
-    var sk = ANALYSIS.skills || {};
-    (sk.prioritized || []).forEach(function(s) { DECISIONS.skills.keep.add(s); });
+    var sk = cleanSkills(ANALYSIS);
+    sk.prioritized.forEach(function(s) { DECISIONS.skills.keep.add(s); });
+    // Suggested skills start added: each one is backed by the candidate's
+    // materials and worth points, so the fast path is to leave them on.
+    sk.toAdd.forEach(function(o) { DECISIONS.skills.add.add(o.skill); });
     var sh = mk('div', { cls: 'sec-title' }); sh.textContent = 'Skills \u2014 tap to toggle'; skillSec.appendChild(sh);
+    if (sk.toAdd.length) {
+      var addNote = mk('p', { cls: 'note' }); addNote.style.cssText = 'margin:0 0 8px;color:#374151';
+      addNote.textContent = sk.toAdd.length + ' suggested skill' + (sk.toAdd.length > 1 ? 's are' : ' is') + ' already added (marked +). Tap any you wouldn\u2019t claim to remove it.';
+      skillSec.appendChild(addNote);
+    }
     var skillWrap = mk('div'); skillSec.appendChild(skillWrap);
-    (sk.prioritized || []).forEach(function(s) {
+    sk.prioritized.forEach(function(s) {
       var sp = mk('span', { cls: 'skill on' }); sp.textContent = s;
       sp.dataset.act = 'skill'; sp.dataset.kind = 'keep'; sp.dataset.skill = s;
       skillWrap.appendChild(sp);
     });
-    (sk.toAdd || []).forEach(function(o) {
-      var sp = mk('span', { cls: 'skill add' }); sp.textContent = '+ ' + o.skill; sp.title = o.note || '';
+    sk.toAdd.forEach(function(o) {
+      var sp = mk('span', { cls: 'skill add on' }); sp.textContent = '+ ' + o.skill; sp.title = o.note || '';
       sp.dataset.act = 'skill'; sp.dataset.kind = 'add'; sp.dataset.skill = o.skill;
       if (matchData() && gainOf(o) > 0) {
         var sg = mk('span', { cls: 'sk-gain' }); sg.textContent = '+' + gainOf(o);
@@ -1844,7 +1852,7 @@
       }
       skillWrap.appendChild(sp);
     });
-    if ((sk.considerDropping || []).length) {
+    if (sk.considerDropping.length) {
       var dn = mk('p', { cls: 'note' }); dn.textContent = 'Suggested to drop: ' + sk.considerDropping.join(', ');
       skillSec.appendChild(dn);
     }
@@ -1898,6 +1906,36 @@
     };
   }
   function gainOf(o) { var g = Math.round(Number(o && o.gain)); return isFinite(g) && g > 0 ? g : 0; }
+  // Tidy the response's skills in place so the chips and the score read the
+  // same list: text entries become objects, nameless ones and repeats go,
+  // and when there is a score, so does any suggested skill worth no points
+  // (it is already counted, so offering it would be a dead chip).
+  function cleanSkills(analysis) {
+    var sk = (analysis.skills && typeof analysis.skills === 'object') ? analysis.skills : {};
+    var names = function(list) {
+      return (Array.isArray(list) ? list : []).filter(function(x) { return typeof x === 'string' && x.trim(); }).map(function(x) { return x.trim(); });
+    };
+    var seen = {};
+    sk.prioritized = names(sk.prioritized).filter(function(s) {
+      var k = s.toLowerCase(); if (seen[k]) { return false; } seen[k] = true; return true;
+    });
+    sk.considerDropping = names(sk.considerDropping);
+    var scored = !!matchData();
+    var out = [];
+    (Array.isArray(sk.toAdd) ? sk.toAdd : []).forEach(function(o) {
+      if (typeof o === 'string') { o = { skill: o }; }
+      if (!o || typeof o.skill !== 'string') { return; }
+      var name = o.skill.trim(), k = name.toLowerCase();
+      if (!name || seen[k]) { return; }
+      if (scored && gainOf(o) === 0) { return; }
+      seen[k] = true; o.skill = name;
+      if (typeof o.note !== 'string') { o.note = ''; }
+      out.push(o);
+    });
+    sk.toAdd = out;
+    analysis.skills = sk;
+    return sk;
+  }
   function closesOf(o) { return (o && typeof o.closes === 'string') ? o.closes.trim() : ''; }
   function mkGainBadge(o) {
     if (!matchData()) { return null; }

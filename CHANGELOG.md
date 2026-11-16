@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.10.2
+
+- **Skills come first, and they do more of the work.** The Skills section is now at the top of the review, above title changes. When a posting asks for something a keyword can show (a tool, a method, a certification), the suggestion is now a skill you add with one tap, worded the way the posting words it, instead of a bullet you'd have to answer and edit.
+- **Suggested skills start added.** Each one is backed by your materials and adds points to your match, so they're switched on when the review opens. A note above them says how many were added; tap any you wouldn't claim to remove it.
+- **Every suggested skill now shows its points.** A skill that wouldn't change your match is no longer suggested, so you won't see chips with no number. If your résumé already lists everything relevant, there are simply no suggestions.
+- **Fewer "Did you…?" questions.** A new bullet is suggested only when something has to be shown as work experience, such as years doing it, scope or a result. Bullet rewrites are unchanged.
+- The starting score now counts only what's written on your main résumé, not things mentioned only in your other sources, so it may read a little lower than before with more room to rise as you add skills.
+
 ## 1.10.1
 
 - **A new PDF style for uploads: Parser-friendly.** Pick it under Settings → PDF style when a job site reads your uploaded résumé and fills in the application for you. It is one plain column with standard headings (Summary, Skills, Experience, Education, Certifications), so the site reads it top to bottom without mixing sidebar text into your jobs. Each job is a title line followed by a company, location and dates line, and the signature win becomes the first bullet. The four designed styles are unchanged, for when a person reads your résumé first.
