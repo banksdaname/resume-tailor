@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.0
+
+- **Write a cover letter from the same run.** After Tailor, a **Write a cover letter →** button at the bottom of the review opens a cover-letter panel that slides over the Tailor panel. **← Back to résumé** returns with all your choices kept.
+- **The first draft is free.** It's assembled from what Tailor already found and what you approved: the role and company, the must-haves your résumé was missing (answered first), your approved bullet rewrites and additions, your saved summary, and your Signature wins once you've built the résumé. It uses only those facts and reads complete as it is.
+- **Fill gaps with the same suggestion styles.** The "Did you…?" additions you skipped for the résumé come back as letter cards: Tap to fill, Ready-made or Write my own. An included card keeps its style when you switch, as on the résumé. A strip shows the word count and how many missing must-haves the letter answers.
+- **Optional Polish.** One small call that sends only the draft, the must-haves and the posting, not your full materials, and smooths the wording. A polished version that adds a number not in your draft is rejected. If you change a card afterwards, the letter goes back to the draft until you polish again.
+- **Letterhead, addresses and a hand-drawn signature.** Your name and contact line fill in from your last Build and are saved for every letter. Add the hiring manager, company and address as needed; blank lines are left out. Draw your signature once with a mouse, finger or pen and it prints in blue ink above your typed name.
+- **PDF or plain text.** Export a plain-letter PDF with the same header as the Parser-friendly résumé (file name ends in `_Cover_Letter`), or copy the text into an application.
+
 ## 1.11.2
 
 - **Included additions keep their style.** Switching the Suggestion style now changes only the additions that are still on Skip. An addition you've included stays the way you made it: one filled in with Tap to fill keeps its picks when you switch to Ready-made, and one included as Ready-made stays Ready-made when you switch back. A short note on the card says which style it's keeping.

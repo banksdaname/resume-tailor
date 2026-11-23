@@ -5,6 +5,8 @@ A browser userscript that tailors your résumé to a specific job posting using 
 - A formatted **PDF** in your choice of five styles: four designed ones (Editorial Warmth, Slate Professional, Engineering Blueprint, Bold Data-Forward) and a plain Parser-friendly one for uploading to job sites.
 - A plain-text **ATS version** for pasting directly into job application portals.
 
+It can also write a matching **cover letter** from the same run, as a PDF or plain text.
+
 It runs entirely in your browser. Your résumé content is stored locally via your userscript manager's storage — nothing is sent anywhere except the job description and your résumé text, which go to Claude through a small proxy you control (see below).
 
 ## How it works
@@ -198,6 +200,17 @@ After **Tailor my résumé**, a match score appears under the panel header: an e
 
 A running cost estimate for the current session is shown discreetly in the panel header, next to the version number — hover over it for a breakdown of input/output tokens on the most recent call. This is an estimate based on Anthropic's published rates, not a billing-accurate figure.
 
+## Writing a cover letter
+
+After **Tailor my résumé**, click **Write a cover letter →** at the bottom of the review. A cover-letter panel slides over the Tailor panel; **← Back to résumé** returns with everything as you left it.
+
+- **The first draft costs nothing.** It is put together from the Tailor run: the role and company from the posting, the must-haves your résumé was missing, the changes you approved, your saved summary and, if you've built the résumé, its Signature wins. It uses only those facts.
+- **Add to your letter.** The "Did you…?" additions you skipped for the résumé come back as cards, in the same three suggestion styles. Include one and its sentence joins the letter; a card with a blank left unfilled stays out until you fill it. The strip at the top shows the word count and how many missing must-haves the letter answers.
+- **Polish wording** (optional) is the only API call. It sends just the draft, the must-haves and the posting, not your full materials, and rewrites for flow. If the polished version contains a number that isn't in your draft, it's rejected and your draft stays as it was.
+- **To** holds the hiring manager's name, the company and its address. All are optional; blank lines are left out, and with no name the greeting is "Dear Hiring Manager,".
+- **Your letterhead & signature** is saved once and reused on every letter. The letterhead fills itself from your last Build. Draw your signature with a mouse, finger or pen; it prints in blue ink above your typed name. Untick **Sign the PDF** to leave it off.
+- **Export PDF** prints a plain letter with the same header as the Parser-friendly résumé (file name ends in `_Cover_Letter`). **Text · copy** gives the plain-text version for pasting into an application.
+
 ## Known limitations
 
 - On a résumé long enough to span two pages, each style's sidebar background currently only renders on page 1; page 2's sidebar content appears on a plain background. Chrome's print engine has inconsistent support for the CSS features that would be the standard fix for this. This affects all four PDF styles.
@@ -208,7 +221,8 @@ A running cost estimate for the current session is shown discreetly in the panel
 ## Privacy notes
 
 - Your résumé content and knowledge base are stored locally via your userscript manager (`GM_setValue`/`GM_getValue`), not on any third-party server.
-- Job descriptions and résumé content are sent to Anthropic's API only when you click "Tailor my résumé" or "Build my résumé," routed through the proxy you control.
+- Job descriptions and résumé content are sent to Anthropic's API only when you click "Tailor my résumé" or "Build my résumé," routed through the proxy you control. A cover letter's **Polish wording** sends the letter draft, the must-haves and the job description the same way.
+- Your cover-letter letterhead and drawn signature are stored locally the same way, and are never sent to the API.
 - No analytics, tracking, or telemetry of any kind.
 
 ## License

@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.11.2
+// @version      1.12.0
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
-// @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
+// @description  Tailor your résumé to any job posting. Styled PDF + ATS plain text, plus a matching cover letter.
 // @author       Résumé Tailor contributors
 // @match        *://*/*
 // @exclude-match chrome-extension://*/*
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.11.2';
+  var SCRIPT_VERSION = '1.12.0';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -150,6 +150,8 @@
   var KB = GM_getValue('rt_kb', null);
   if (typeof KB === 'string') { try { KB = JSON.parse(KB); } catch (e) { KB = null; } }
   var ANALYSIS = null, DECISIONS = null, LAST_RESUME = null, pdfText = '';
+  // The posting text from the last Tailor run; the cover letter's Polish uses it.
+  var LAST_JD = '';
 
   /* ============ model config ============
      The model list, prices, and effort options live in ONE place: the
@@ -349,6 +351,23 @@
     #rt-root .eff-pair.unlinked .eff-link{border-color:#c9cdd6;background:#fff;color:#9aa0ab;border-style:dashed}
     #rt-root .eff-pair.unlinked .eff-link:hover{border-color:#3b4cca;color:#3b4cca;background:#eef0fb}
     #rt-root #rt-ats{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;background:#fff}
+    /* Cover letter: a second panel that slides in over the Tailor panel,
+       same width and position. The Tailor panel underneath keeps its state. */
+    #rt-root .rt-cl{position:fixed;top:0;right:0;width:430px;max-width:96vw;height:100vh;background:#f4f5f8;overflow-y:auto;z-index:5;transform:translateX(100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;box-shadow:-8px 0 30px rgba(0,0,0,.18)}
+    #rt-root .rt-cl.open{transform:none;visibility:visible;transition:transform .25s ease,visibility 0s}
+    #rt-root .rt-cl .rt-hd{position:sticky;top:0}
+    #rt-root .cl-back{border:1px solid #e6e8ee;background:#fff;border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:650;color:#3b4cca;cursor:pointer;font-family:inherit}
+    #rt-root .cl-strip{position:sticky;top:55px;z-index:1;background:#fff;border-bottom:1px solid #e6e8ee;padding:8px 16px;font-size:12.5px;color:#1c2230;font-weight:600}
+    #rt-root .cl-strip .cl-aim{color:#6b7280;font-weight:500}
+    #rt-root .cl-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    #rt-root .cl-grid .wide{grid-column:1 / -1}
+    #rt-root .cl-grid input{padding:7px 9px;font-size:12.5px}
+    #rt-root .cl-pend{font-size:11.5px;color:#b45309;font-weight:600;margin:4px 0 0}
+    #rt-root .cl-sig{display:block;width:100%;aspect-ratio:400/120;background:#fff;border:1px dashed #9aa0ab;border-radius:8px;touch-action:none;cursor:crosshair}
+    #rt-root .cl-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin:0}
+    #rt-root .cl-check input{margin:0}
+    #rt-root #rt-clPreview iframe{display:block;width:100%;height:560px;border:none}
+    #rt-root #rt-clText{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;background:#fff}
   `;
 
   /* ============ DOM — createElement only, no innerHTML, bypasses LinkedIn TrustedHTML ============ */
@@ -550,7 +569,9 @@
     mk('div', { id: 'rt-bulletSec' }),
     mk('div', { id: 'rt-newSec' }),
     ap(mk('div', { cls: 'row' }), mkBtn('primary', 'rt-assemble', 'Build my r\u00E9sum\u00E9 \u2192'), assembleStopBtn),
-    mk('div', { id: 'rt-assembleErr' })
+    mk('div', { id: 'rt-assembleErr' }),
+    ap(mk('div', { cls: 'row' }), mkBtn('ghost', 'rt-clOpen', '\u2709\uFE0F Write a cover letter \u2192')),
+    ap(mk('p', { cls: 'note' }), document.createTextNode('Built from this Tailor run, so nothing extra is spent unless you tap Polish.'))
   );
 
   // Output card
@@ -1695,6 +1716,7 @@
     var user = 'CANDIDATE MATERIALS:\n' + kbText() + '\n\nTARGET JOB DESCRIPTION:\n' + cleanJD(jd) + '\n\nReturn JSON exactly:\n{\n  "allCompanies":["..."],\n  "targetJobTitle":"",\n  "targetCompany":"",\n  "match":{"startScore":0,"missingMustHaves":["..."]},\n  "titleSuggestions":[{"id":"t1","company":"","original":"","suggested":"","rationale":"","gain":0,"closes":""}],\n  "bulletRewrites":[{"id":"b1","company":"","original":"","rewritten":"","rationale":"","gain":0,"closes":""}],\n  "newBulletPrompts":[{"id":"n1","company":"","question":"Did you \u2026?","phrasingIfYes":"","blanks":[{"token":"","options":["..."]}],"readyMade":"","keywords":["..."],"rationale":"","gain":0,"closes":""}],\n  "skills":{"prioritized":["..."],"toAdd":[{"skill":"","note":"","gain":0,"closes":""}],"considerDropping":["..."]}\n}\nMax ~6 items per array, except allCompanies, which must be complete, and skills.toAdd, which may have up to 10. skills.prioritized = the candidate\'s real, JD-relevant skills, best first.';
     callClaudeAndParse(SYS_A, user, ANALYZE_MAX_TOKENS, 'analyze').then(function(parsed) {
       ANALYSIS = parsed;
+      LAST_JD = jd;
       (ANALYSIS.newBulletPrompts || []).forEach(function(n) { n.phrasingIfYes = normalizePlaceholders(n.phrasingIfYes); });
       renderReview();
       rt$('rt-reviewCard').classList.remove('hidden');
@@ -1858,30 +1880,45 @@
     return fillText(n, d);
   }
   function keptKeyword(text, kw) { return text.toLowerCase().indexOf(kw.toLowerCase()) !== -1; }
-  // Include or skip one addition, keeping its Include/Skip buttons, the
-  // card's dimming and the match score in step.
-  function setNewsStatus(id, approved) {
-    var d = DECISIONS.news[id];
+  // Include or skip one addition card, keeping its Include/Skip buttons, the
+  // card's dimming and the match score in step. k is the card set: 'news'
+  // (the résumé's Possible additions) or 'clnews' (the cover letter's).
+  function setAddStatus(k, id, approved) {
+    var d = DECISIONS[k] && DECISIONS[k][id];
     if (!d) { return; }
     d.status = approved ? 'approved' : 'skipped';
-    var rev = root.querySelector('#rev-news-' + id);
+    var rev = root.querySelector('#rev-' + k + '-' + id);
     if (rev) {
       var yes = rev.querySelector('[data-act="seg-yes"]'), no = rev.querySelector('[data-act="seg-no"]');
       if (yes) { yes.className = 'chip' + (approved ? ' on-ok' : ''); }
       if (no) { no.className = 'chip' + (approved ? '' : ' on-skip'); }
       rev.classList.toggle('is-skip', !approved);
     }
-    renderMatch();
+    if (k === 'clnews') { refreshLetter(); } else { renderMatch(); }
   }
   var NEWS_COMPANIES = [];
-  function renderNews() {
-    var newSec = rt$('rt-newSec');
-    clearEl(newSec);
+  // The two places addition cards appear. Both use the same cards, the same
+  // three suggestion styles and the same saved style choice.
+  var ADD_SETS = {
+    news: { sec: 'rt-newSec', title: 'Possible additions \u2014 only if true', company: true, badge: true },
+    clnews: { sec: 'rt-clNewSec', title: 'Add to your letter \u2014 only if true', company: false, badge: false }
+  };
+  function addList(k) {
     var ns = (ANALYSIS && Array.isArray(ANALYSIS.newBulletPrompts)) ? ANALYSIS.newBulletPrompts : [];
-    if (!ns.length || !DECISIONS) { return; }
+    return k === 'clnews' ? clCards() : ns;
+  }
+  function renderNews() { renderAdditions('news'); }
+  function renderAdditions(k) {
+    var set = ADD_SETS[k];
+    var newSec = rt$(set.sec);
+    clearEl(newSec);
+    var ns = addList(k);
+    if (!ns.length || !DECISIONS || !DECISIONS[k]) { return; }
     var style = suggStyle();
+    // Typing or tapping inside a letter card updates the letter as you go.
+    var changed = function() { if (k === 'clnews') { refreshLetter(); } };
 
-    var nh = mk('div', { cls: 'sec-title' }); nh.textContent = 'Possible additions — only if true'; newSec.appendChild(nh);
+    var nh = mk('div', { cls: 'sec-title' }); nh.textContent = set.title; newSec.appendChild(nh);
     var styRow = mk('div', { cls: 'sty-row' });
     var styLbl = mk('span', { cls: 'sty-lbl' }); styLbl.textContent = 'Suggestion style';
     var stySeg = mk('div', { cls: 'seg' });
@@ -1894,7 +1931,7 @@
       c.addEventListener('click', function() {
         CFG.suggStyle = s[0];
         GM_setValue('rt_suggStyle', s[0]);
-        renderNews();
+        renderAdditions(k);
       });
       stySeg.appendChild(c);
       if (s[0] === style) { hint.textContent = s[2]; }
@@ -1903,7 +1940,7 @@
     newSec.appendChild(styRow); newSec.appendChild(hint);
 
     ns.forEach(function(n) {
-      var d = DECISIONS.news[n.id];
+      var d = DECISIONS[k][n.id];
       if (!d) { return; }
       // An Included card keeps the style it was showing, with its picks or
       // wording, when the toggle changes; only Skipped cards follow the toggle.
@@ -1914,6 +1951,10 @@
       var mode = cardMode(n, cardStyle);
       d.text = newsText(n, d, mode);
 
+      var rev = mkRev('rev-' + k + '-' + n.id, n.question, null, null, n.rationale || '', set.badge ? n : null);
+      if (d.status !== 'approved') { rev.classList.add('is-skip'); }
+      var anchor = rev.querySelector('.why') || null;
+      if (set.company) {
       var coSel = mk('select'); coSel.style.cssText = 'margin-bottom:6px;font-size:12px';
       NEWS_COMPANIES.forEach(function(co) {
         var opt = mk('option'); opt.value = co; opt.textContent = co;
@@ -1925,15 +1966,12 @@
         coSel.insertBefore(opt2, coSel.firstChild);
       }
       coSel.addEventListener('change', function() { d.company = coSel.value; });
-
-      var rev = mkRev('rev-news-' + n.id, n.question, null, null, n.rationale || '', n);
-      if (d.status !== 'approved') { rev.classList.add('is-skip'); }
-      var anchor = rev.querySelector('.why') || null;
       rev.insertBefore(coSel, anchor);
+      }
 
       var body = mk('div');
       // Any change the person makes to a card means they want it in.
-      var include = function() { if (d.status !== 'approved') { setNewsStatus(n.id, true); } };
+      var include = function() { if (d.status !== 'approved') { setAddStatus(k, n.id, true); } else { changed(); } };
 
       if (mode === 'fill') {
         var toks = n.blanks.map(function(b) { return b.token; });
@@ -1965,7 +2003,7 @@
             paintPrev();
             // Filling the last blank includes the card. Nothing here ever
             // switches it back to Skip: only the person's own Skip tap does.
-            if (allPicked(n, d)) { include(); }
+            if (allPicked(n, d)) { include(); } else { changed(); }
           };
           b.options.forEach(function(o) {
             var c = mk('span', { cls: 'opt' + (d.picks[b.token] === o ? ' on' : '') }); c.textContent = o;
@@ -2003,7 +2041,7 @@
         ta.addEventListener('input', function() {
           d.own = ta.value; d.text = ta.value;
           paintKw();
-          if (ta.value.trim()) { include(); }
+          if (ta.value.trim()) { include(); } else { changed(); }
         });
         body.appendChild(ta); body.appendChild(kwLine);
         paintKw();
@@ -2018,8 +2056,10 @@
         kept.textContent = 'Included, so it stays in ' + keptName + '. To change it, tap Skip, then tap a style above.';
         body.appendChild(kept);
       }
+      // Letter cards say when an Included card can't reach the letter yet.
+      if (k === 'clnews') { body.appendChild(mk('p', { cls: 'cl-pend hidden' })); }
       rev.insertBefore(body, anchor);
-      rev.appendChild(mkSegChoice('news', n.id, 'Include', 'Skip', d.status === 'approved'));
+      rev.appendChild(mkSegChoice(k, n.id, 'Include', 'Skip', d.status === 'approved'));
       newSec.appendChild(rev);
     });
   }
@@ -2280,6 +2320,7 @@
         chips[1].className = 'chip on-skip';
         rev.classList.add('is-skip');
       }
+      if (k === 'clnews') { refreshLetter(); }
     } else if (act === 'skill') {
       var sset = DECISIONS.skills[t.dataset.kind];
       var sv = t.dataset.skill;
@@ -2827,7 +2868,7 @@
     while (suffix.test(s)) s = s.replace(suffix, '');
     return s.replace(/[\s,&]+$/, '');
   }
-  function buildExportFilename(resume) {
+  function buildExportFilename(resume, kind) {
     var nameParts = (resume.name || '').trim().split(/\s+/);
     var first = nameParts[0] || 'Resume';
     var last = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
@@ -2835,8 +2876,8 @@
     var resumeTitle = ((resume.experience || [])[0] || {}).title || '';
     var title = jdTitle || resumeTitle || '';
     var company = stripCompanySuffix((ANALYSIS && ANALYSIS.targetCompany || '').trim());
-    var parts = [first, last, company, title, 'Resume'].map(slugifyFilenamePart).filter(Boolean);
-    return parts.join('_') || 'Resume';
+    var parts = [first, last, company, title, kind || 'Resume'].map(slugifyFilenamePart).filter(Boolean);
+    return parts.join('_') || kind || 'Resume';
   }
   // Injects a <title> tag right after <head> — this is what Chrome's print
   // dialog and "Save As" use to suggest a filename. None of the template
@@ -2869,15 +2910,15 @@
     setTimeout(function() { msg.textContent = ''; }, 10000);
   });
 
-  rt$('rt-export').addEventListener('click', function() {
-    if (!LAST_RESUME) { return; }
-    var html = withFilenameTitle(activeTemplateBuild()(LAST_RESUME), buildExportFilename(LAST_RESUME));
+  // Opens the HTML in a new tab and prints it (Save as PDF). Shared by the
+  // résumé and the cover letter.
+  function openPrint(html, msgEl, blockedMsg) {
     var blob = new Blob([html], { type: 'text/html' });
     var url = URL.createObjectURL(blob);
     var w = window.open(url, '_blank');
     if (!w) {
-      rt$('rt-copyMsg').textContent = 'Pop-up blocked. Use Copy HTML instead, then paste the link into a new tab.';
-      setTimeout(function() { rt$('rt-copyMsg').textContent = ''; }, 8000);
+      msgEl.textContent = blockedMsg || 'Pop-up blocked. Allow pop-ups for this site, then try again.';
+      setTimeout(function() { msgEl.textContent = ''; }, 8000);
       URL.revokeObjectURL(url);
       return;
     }
@@ -2897,6 +2938,11 @@
     w.addEventListener('load', function() { setTimeout(tryPrint, 350); });
     // Fallback in case 'load' doesn't fire for some reason
     setTimeout(tryPrint, 3000);
+  }
+  rt$('rt-export').addEventListener('click', function() {
+    if (!LAST_RESUME) { return; }
+    var html = withFilenameTitle(activeTemplateBuild()(LAST_RESUME), buildExportFilename(LAST_RESUME));
+    openPrint(html, rt$('rt-copyMsg'), 'Pop-up blocked. Use Copy HTML instead, then paste the link into a new tab.');
   });
 
   rt$('rt-copy').addEventListener('click', function() {
@@ -2913,6 +2959,503 @@
     }
     rt$('rt-copyMsg').textContent = 'Copied \u2713 \u2014 paste straight into the application.';
     setTimeout(function() { rt$('rt-copyMsg').textContent = ''; }, 3000);
+  });
+
+
+  /* ============ cover letter ============
+     A second panel that slides over the Tailor panel. The letter is put
+     together by code from this Tailor run, so it costs nothing: the role and
+     company, the must-haves, the changes you approved and your saved summary.
+     The "Did you…?" additions you Skipped for the résumé come back as cards,
+     in the same three suggestion styles. Polish is the only API call, and it
+     sends just the draft, the must-haves and the posting. */
+  var SYS_C = 'You are an expert cover-letter editor. You get a factual draft cover letter built from the candidate’s approved résumé material, the must-haves the job asks for, and the job posting. Rewrite the draft so it reads naturally in the candidate’s voice: clear, factual and warm, with no buzzwords or clichés.\nRULES:\n1. Keep every fact in the draft true and unchanged in substance. Add no new facts, numbers, employers, titles, tools, skills or claims, and never raise seniority or scope.\n2. Keep every must-have and keyword phrase that appears in the draft, worded the way the posting words it, so keyword screening still finds them.\n3. Use the posting only to choose wording and to write one honest sentence on why this role or company appeals, based only on what the posting says. Never claim knowledge of the company beyond the posting.\n4. Structure: an opening paragraph naming the role, one or two proof paragraphs, a short paragraph on why this role, and a short close.\n5. Aim for 250-350 words if the draft supports it. Never pad to reach the count.\n6. Leave out the greeting, sign-off, name, date and addresses; they are added separately.\nOutput ONLY valid JSON. No markdown, no preamble.';
+
+  var CL_VERBS = /^(led|built|ran|won|grew|cut|made|drove|wrote|set|began|brought|taught|sold|took|kept|met|spent|found|held|oversaw|saw|chose|did|got|gave|rebuilt|undertook|overcame|thought|sought|fought|bought|dug|shot|spun|hit|put|split|sped|stood|understood|went|became|rose|beat|bid|lent|sent|leant|read|told|rode|flew|drew|knew|threw|upheld|withdrew)$/i;
+  // A bullet that starts with a past-tense verb ("Led…", "Cut…") can follow "I".
+  function clVerbStart(t) {
+    var w = (/^([A-Za-z]+)/.exec(t) || [])[1] || '';
+    return /^[A-Z][a-z]+$/.test(w) && (/ed$/.test(w) || CL_VERBS.test(w));
+  }
+  function clLcFirst(t) { return /^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; }
+  function clTrimEnd(t) { return String(t || '').replace(/\s+/g, ' ').trim().replace(/[.;,\s]+$/, ''); }
+  function clSentence(t) { t = clTrimEnd(t); return t ? t + (/[!?]$/.test(t) ? '' : '.') : ''; }
+  function clAnd(list) {
+    if (list.length < 2) { return list.join(''); }
+    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+  }
+  function clMust() {
+    var m = ANALYSIS && ANALYSIS.match;
+    return (m && Array.isArray(m.missingMustHaves)) ? m.missingMustHaves.filter(function(x) { return typeof x === 'string' && x.trim(); }).map(function(x) { return x.trim(); }) : [];
+  }
+  // The letter's cards: the additions not Included on the résumé.
+  function clCards() {
+    var ns = (ANALYSIS && Array.isArray(ANALYSIS.newBulletPrompts)) ? ANALYSIS.newBulletPrompts : [];
+    if (!DECISIONS) { return []; }
+    return ns.filter(function(n) { var d = DECISIONS.news[n.id]; return !d || d.status !== 'approved'; });
+  }
+  function clFindById(list, id) { return (Array.isArray(list) ? list : []).filter(function(o) { return o && o.id === id; })[0] || null; }
+
+  // Every true thing the letter may say, from this run. Items that answer a
+  // must-have come first, in the order the must-haves are listed.
+  function letterFacts() {
+    var facts = [];
+    var add = function(text, company, closes) {
+      text = clTrimEnd(text);
+      if (!text || looksUnfilled(text)) { return; }
+      for (var i = 0; i < facts.length; i++) { if (textSimilarity(facts[i].text, text) >= 0.8) { return; } }
+      facts.push({ text: text, company: (company || '').trim(), closes: (closes || '').trim() });
+    };
+    if (!ANALYSIS || !DECISIONS) { return facts; }
+    if (LAST_RESUME && Array.isArray(LAST_RESUME.experience)) {
+      LAST_RESUME.experience.forEach(function(j) { if (j && j.highlight) { add(j.highlight, j.company, ''); } });
+    }
+    Object.keys(DECISIONS.news).forEach(function(id) {
+      var d = DECISIONS.news[id];
+      if (d.status === 'approved') { add(d.text, d.company, closesOf(clFindById(ANALYSIS.newBulletPrompts, id))); }
+    });
+    clCards().forEach(function(n) {
+      var d = DECISIONS.clnews && DECISIONS.clnews[n.id];
+      if (d && d.status === 'approved') { add(d.text, n.company, closesOf(n)); }
+    });
+    Object.keys(DECISIONS.bullets).forEach(function(id) {
+      var d = DECISIONS.bullets[id];
+      if (d.status === 'approved') { add(d.text, d.company, closesOf(clFindById(ANALYSIS.bulletRewrites, id))); }
+    });
+    var must = clMust().map(function(m) { return m.toLowerCase(); });
+    var rank = function(f) { var i = must.indexOf(f.closes.toLowerCase()); return i === -1 ? 99 : i; };
+    return facts.map(function(f, i) { return { f: f, i: i }; })
+      .sort(function(a, b) { return (rank(a.f) - rank(b.f)) || (a.i - b.i); })
+      .map(function(x) { return x.f; });
+  }
+  // Facts as sentences. The employer is named only when it changes (st
+  // carries it across paragraphs). A bullet that doesn't start with a verb
+  // gets a lead-in, so it never reads as a fragment.
+  function clFactSentences(list, st) {
+    var out = [];
+    list.forEach(function(f) {
+      var verb = clVerbStart(f.text);
+      if (f.company && f.company !== st.co) {
+        out.push(verb ? 'At ' + f.company + ', I ' + clLcFirst(f.text) + '.' : 'One example from my time at ' + f.company + ': ' + f.text + '.');
+      } else if (verb) {
+        out.push((st.n ? 'I also ' : 'I ') + clLcFirst(f.text) + '.');
+      } else {
+        out.push((st.n ? 'Another example: ' : 'For example: ') + f.text + '.');
+      }
+      st.co = f.company || st.co; st.n++;
+    });
+    return out;
+  }
+  // The draft letter body as paragraphs. Pure code, no API call.
+  function draftLetter() {
+    var cl = (DECISIONS && DECISIONS.cl) || {};
+    var role = ((ANALYSIS && ANALYSIS.targetJobTitle) || '').trim();
+    // In sentences the company reads without "Inc", "LLC" and the like.
+    var company = stripCompanySuffix((cl.company != null ? cl.company : ((ANALYSIS && ANALYSIS.targetCompany) || '')).trim());
+    var facts = letterFacts();
+    var p1 = facts.slice(0, 2), p2 = facts.slice(2, 5);
+    var paras = [];
+
+    // A résumé summary is often a phrase ("Maintenance lead with ten
+    // years…"), not a sentence, so it gets a lead-in unless it already
+    // speaks as "I".
+    var summary = clSentence((LAST_RESUME && LAST_RESUME.summary) || (KB && KB.originalSummary) || '');
+    if (summary && !/(^|\W)(I|I\u2019m|I'm|my|My)\W/.test(summary)) { summary = 'My background in brief: ' + clLcFirst(summary); }
+    paras.push(('I am writing to apply for ' + (role ? 'the ' + role + ' position' : 'this position') + (company ? ' at ' + company : '') + '. ' + summary).trim());
+    var st = { co: null, n: 0 };
+
+    var covered = [];
+    p1.forEach(function(f) { if (f.closes && covered.indexOf(f.closes) === -1) { covered.push(f.closes); } });
+    var s1 = clFactSentences(p1, st);
+    if (s1.length) { paras.push(((covered.length ? 'This role calls for ' + clAnd(covered) + '. ' : '') + s1.join(' ')).trim()); }
+
+    var s2 = clFactSentences(p2, st);
+    var asked = ((ANALYSIS.skills && ANALYSIS.skills.toAdd) || []).map(function(o) { return o && o.skill; }).filter(function(sk) { return sk && DECISIONS.skills.add.has(sk); }).slice(0, 4);
+    if (asked.length) { s2.push((s1.length || s2.length ? 'My skills also include ' : 'My skills include ') + clAnd(asked) + ', all named in this posting.'); }
+    if (s2.length) { paras.push(s2.join(' ')); }
+
+    paras.push('I would welcome the chance to bring this experience to ' + (company || 'your team') + (role ? ' as your next ' + role : '') + '.');
+    paras.push('Thank you for your time and consideration. I look forward to talking with you about how I can help.');
+    return paras;
+  }
+  // What the letter shows: the polished wording while it still matches the
+  // draft it came from, otherwise the draft.
+  function letterParas() {
+    var cl = DECISIONS.cl, draft = draftLetter(), key = JSON.stringify(draft);
+    if (cl.polished && cl.polished.base !== key) { cl.polished = null; cl.polishStale = true; }
+    return cl.polished ? cl.polished.paras : draft;
+  }
+  function letterCovered() {
+    var seen = {};
+    letterFacts().forEach(function(f) { if (f.closes) { seen[f.closes.toLowerCase()] = true; } });
+    return clMust().filter(function(m) { return seen[m.toLowerCase()]; }).length;
+  }
+  function wordCount(paras) { return paras.join(' ').split(/\s+/).filter(Boolean).length; }
+
+  /* ---- letterhead: saved once, reused on every letter ---- */
+  var LH_FIELDS = [['name', 'Full name', ''], ['location', 'City, ST', ''], ['phone', 'Phone', ''], ['email', 'Email', ''], ['linkedin', 'LinkedIn URL', 'wide']];
+  function loadLetterhead() {
+    var v = GM_getValue('rt_letterhead', null);
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+    return (v && typeof v === 'object') ? v : {};
+  }
+  var LETTERHEAD = loadLetterhead();
+  // Fills empty letterhead fields from the built résumé's name and contact
+  // line ("City, ST · phone · email · linkedin"). Never overwrites a field.
+  function prefillLetterhead(r) {
+    if (!r) { return false; }
+    var got = { name: (r.name || '').trim() };
+    String(r.contact || '').split(/\s*[·|]\s*|\n/).forEach(function(part) {
+      part = part.trim();
+      if (!part) { return; }
+      if (/@/.test(part)) { got.email = got.email || part; }
+      else if (/linkedin\./i.test(part)) { got.linkedin = got.linkedin || part; }
+      else if (/\d{3}.*\d{4}/.test(part) && !/[a-z]{3}/i.test(part.replace(/ext/i, ''))) { got.phone = got.phone || part; }
+      else if (!got.location) { got.location = part; }
+    });
+    var changedAny = false;
+    LH_FIELDS.forEach(function(f) { if (!LETTERHEAD[f[0]] && got[f[0]]) { LETTERHEAD[f[0]] = got[f[0]]; changedAny = true; } });
+    if (changedAny) { GM_setValue('rt_letterhead', LETTERHEAD); }
+    return changedAny;
+  }
+  function letterheadContact() {
+    return ['location', 'phone', 'email', 'linkedin'].map(function(k) { return (LETTERHEAD[k] || '').trim(); }).filter(Boolean);
+  }
+
+  /* ---- signature: pen strokes in a 400×120 box, drawn in blue ink ---- */
+  var SIG_W = 400, SIG_H = 120, SIG_INK = '#1d3c9e';
+  var SIGNATURE = GM_getValue('rt_signature', null);
+  if (typeof SIGNATURE === 'string') { try { SIGNATURE = JSON.parse(SIGNATURE); } catch (e) { SIGNATURE = null; } }
+  if (!Array.isArray(SIGNATURE)) { SIGNATURE = []; }
+  // Smooth curve through each stroke's points (midpoint quadratic curves).
+  function sigPath(strokes) {
+    return strokes.filter(function(st) { return st.length; }).map(function(st) {
+      if (st.length === 1) { return 'M' + st[0][0] + ' ' + st[0][1] + 'l0.1 0'; }
+      var d = 'M' + st[0][0] + ' ' + st[0][1];
+      for (var i = 1; i < st.length - 1; i++) {
+        var mx = Math.round((st[i][0] + st[i + 1][0]) * 5) / 10, my = Math.round((st[i][1] + st[i + 1][1]) * 5) / 10;
+        d += 'Q' + st[i][0] + ' ' + st[i][1] + ' ' + mx + ' ' + my;
+      }
+      var e = st[st.length - 1];
+      return d + 'L' + e[0] + ' ' + e[1];
+    }).join('');
+  }
+  // The signature as an SVG cropped to the ink, for the PDF.
+  function sigSvg(strokes) {
+    var pts = [].concat.apply([], strokes);
+    if (!pts.length) { return ''; }
+    var xs = pts.map(function(p) { return p[0]; }), ys = pts.map(function(p) { return p[1]; });
+    var pad = 4, x0 = Math.min.apply(null, xs) - pad, y0 = Math.min.apply(null, ys) - pad;
+    var w = Math.max.apply(null, xs) - x0 + pad, h = Math.max.apply(null, ys) - y0 + pad;
+    return '<svg class="sig" xmlns="http://www.w3.org/2000/svg" viewBox="' + [x0, y0, w, h].map(Math.round).join(' ') + '" preserveAspectRatio="xMinYMid meet">' +
+      '<path d="' + sigPath(strokes) + '" fill="none" stroke="' + SIG_INK + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+
+  /* ---- output ---- */
+  function letterDate() { return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); }
+  function letterRecipient() {
+    var cl = DECISIONS.cl;
+    return [cl.manager, cl.company].concat(String(cl.address || '').split('\n'))
+      .map(function(x) { return String(x || '').trim(); }).filter(Boolean);
+  }
+  function letterSalutation() { var m = (DECISIONS.cl.manager || '').trim(); return 'Dear ' + (m || 'Hiring Manager') + ','; }
+  function letterText() {
+    var L = [];
+    var name = (LETTERHEAD.name || '').trim();
+    if (name) { L.push(name); }
+    var c = letterheadContact();
+    if (c.length) { L.push(c.join(' | ')); }
+    L.push('', letterDate(), '');
+    var rcp = letterRecipient();
+    if (rcp.length) { L.push.apply(L, rcp); L.push(''); }
+    L.push(letterSalutation(), '');
+    letterParas().forEach(function(p) { L.push(p, ''); });
+    L.push('Sincerely,');
+    if (name) { L.push(name); }
+    return L.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  // Plain letter, with the same header as the Parser-friendly résumé: name
+  // centred in capitals, contact line under it, then a thin rule.
+  function buildLetterHTML() {
+    var name = (LETTERHEAD.name || '').trim();
+    var contact = letterheadContact().map(function(p) { return '<span class="nb">' + esc(p) + '</span>'; }).join(' | ');
+    var rcp = letterRecipient();
+    var sig = (DECISIONS.cl.sigOn && SIGNATURE.length) ? sigSvg(SIGNATURE) : '';
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<style>\n' +
+      '@page{size:Letter;margin:0.75in 0.9in}\n' +
+      '*{margin:0;padding:0;box-sizing:border-box}\n' +
+      'html,body{font-family:Arial,Helvetica,sans-serif;color:#111111;background:#ffffff}\n' +
+      'body{font-size:10.5pt;line-height:1.45}\n' +
+      '.name{font-size:19pt;font-weight:700;text-align:center;text-transform:uppercase;line-height:1.15}\n' +
+      '.contact{text-align:center;margin-top:3px}\n' +
+      '.nb{white-space:nowrap}\n' +
+      '.rule{border:none;border-top:1px solid #111111;margin:10px 0 18px}\n' +
+      '.date{margin-bottom:14px}\n' +
+      '.rcp{margin-bottom:14px}\n' +
+      'p{margin-bottom:10px}\n' +
+      '.close{margin-top:14px;break-inside:avoid;page-break-inside:avoid}\n' +
+      '.sig{display:block;height:0.6in;width:auto;max-width:2.8in;margin:4px 0 2px}\n' +
+      '.typed{margin-top:' + (sig ? '0' : '28px') + '}\n' +
+      '</style>\n</head>\n<body>\n' +
+      (name ? '<div class="name">' + esc(name) + '</div>\n' : '') +
+      (contact ? '<div class="contact">' + contact + '</div>\n' : '') +
+      '<hr class="rule">\n' +
+      '<div class="date">' + esc(letterDate()) + '</div>\n' +
+      (rcp.length ? '<div class="rcp">' + rcp.map(esc).join('<br>') + '</div>\n' : '') +
+      '<p>' + esc(letterSalutation()) + '</p>\n' +
+      letterParas().map(function(p) { return '<p>' + esc(p) + '</p>'; }).join('\n') +
+      '\n<div class="close"><div>Sincerely,</div>' + sig + '<div class="typed">' + esc(name) + '</div></div>\n' +
+      '</body>\n</html>';
+  }
+
+  /* ---- panel DOM ---- */
+  var clBack = mk('button', { cls: 'cl-back', id: 'rt-clBack' }); clBack.textContent = '← Back to résumé';
+  var clTitle = mk('b'); clTitle.textContent = 'Cover letter';
+  var clHd = ap(mk('div', { cls: 'rt-hd' }), clBack, clTitle);
+  var clStrip = mk('div', { cls: 'cl-strip', id: 'rt-clStrip' });
+
+  var clMgr = mkInp('text', 'rt-clMgr', 'Name, or leave blank for “Dear Hiring Manager”');
+  var clCo = mkInp('text', 'rt-clCo', 'Company');
+  var clAddr = mkTa('rt-clAddr', '2', 'Street, City, ST ZIP (optional)');
+  var clToCard = mkCard(
+    ap(mk('h2'), document.createTextNode('✉️ To')),
+    ap(mk('p', { cls: 'desc' }), document.createTextNode('Every line is optional. Blank lines are left out of the letter.')),
+    ap(mk('div', { cls: 'field' }), ap(mk('label'), document.createTextNode('Hiring manager')), clMgr),
+    ap(mk('div', { cls: 'field' }), ap(mk('label'), document.createTextNode('Company')), clCo),
+    ap(mk('div', { cls: 'field' }), ap(mk('label'), document.createTextNode('Company address')), clAddr)
+  );
+
+  var clAddCard = mkCard(mk('div', { id: 'rt-clNewSec' }), mk('p', { cls: 'note hidden', id: 'rt-clNoCards' }));
+
+  var clPolishBtn = mkBtn('primary', 'rt-clPolish', '✨ Polish wording');
+  var clUndoBtn = mkBtn('ghost hidden', 'rt-clUndo', 'Use the draft');
+  var clViewPdf = mk('button', { id: 'rt-clViewPdf', cls: 'on' }); clViewPdf.textContent = 'PDF preview';
+  var clViewTxt = mk('button', { id: 'rt-clViewTxt' }); clViewTxt.textContent = 'Text · copy';
+  var clExport = mkBtn('primary', 'rt-clExport', 'Export PDF'); clExport.style.marginLeft = 'auto';
+  var clCopy = mkBtn('primary hidden', 'rt-clCopy', 'Copy text'); clCopy.style.marginLeft = 'auto';
+  var clTextArea = mkTa('rt-clText', '18', ''); clTextArea.readOnly = true; clTextArea.classList.add('hidden');
+  var clLetterCard = mkCard(
+    ap(mk('h2'), document.createTextNode('📄 Letter')),
+    ap(mk('p', { cls: 'desc', id: 'rt-clDesc' })),
+    mkRow(clPolishBtn, clUndoBtn),
+    mk('p', { cls: 'note', id: 'rt-clPolishNote' }),
+    mk('div', { id: 'rt-clErr' }),
+    mkRow(ap(mk('div', { cls: 'seg' }), clViewPdf, clViewTxt), clExport, clCopy),
+    mk('div', { id: 'rt-clPreview' }),
+    clTextArea,
+    mk('p', { cls: 'note', id: 'rt-clMsg' })
+  );
+
+  var lhGrid = mk('div', { cls: 'cl-grid' });
+  LH_FIELDS.forEach(function(f) {
+    var inp = mkInp('text', 'rt-lh-' + f[0], f[1]);
+    inp.title = f[1];
+    if (f[2]) { inp.classList.add(f[2]); }
+    inp.addEventListener('input', function() {
+      LETTERHEAD[f[0]] = inp.value.trim();
+      GM_setValue('rt_letterhead', LETTERHEAD);
+      refreshLetter();
+    });
+    lhGrid.appendChild(inp);
+  });
+  var sigCanvas = mk('canvas', { cls: 'cl-sig', id: 'rt-clSig', width: String(SIG_W * 2), height: String(SIG_H * 2) });
+  var sigClear = mkBtn('ghost', 'rt-clSigClear', 'Clear'); sigClear.style.cssText = 'padding:6px 11px;font-size:12px';
+  var sigOnBox = mk('input', { type: 'checkbox', id: 'rt-clSigOn' });
+  var sigOnLbl = ap(mk('label', { cls: 'cl-check' }), sigOnBox, document.createTextNode('Sign the PDF'));
+  var clMeCard = mkCard(
+    ap(mk('h2'), document.createTextNode('🖋️ Your letterhead & signature')),
+    ap(mk('p', { cls: 'desc', id: 'rt-lhDesc' })),
+    lhGrid,
+    ap(mk('label'), document.createTextNode('Signature')),
+    sigCanvas,
+    mkRow(sigClear, sigOnLbl),
+    ap(mk('p', { cls: 'note' }), document.createTextNode('Draw with your mouse, finger or pen. It’s saved as you draw and prints in blue ink above your typed name. The text copy gets your typed name only.'))
+  );
+  lhGrid.style.marginBottom = '12px';
+
+  var clPanel = ap(mk('div', { cls: 'rt-cl', id: 'rt-cl' }), clHd, clStrip,
+    ap(mk('div', { cls: 'rt-body' }), clToCard, clAddCard, clLetterCard, clMeCard));
+  root.appendChild(clPanel);
+
+  /* ---- panel behaviour ---- */
+  var clPreviewTimer = null, clPreviewUrl = null;
+  function paintLetterPreview() {
+    var box = rt$('rt-clPreview');
+    clearEl(box);
+    if (clPreviewUrl) { URL.revokeObjectURL(clPreviewUrl); }
+    clPreviewUrl = URL.createObjectURL(new Blob([buildLetterHTML()], { type: 'text/html' }));
+    var frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', '');
+    frame.src = clPreviewUrl;
+    box.appendChild(frame);
+  }
+  // Brings everything that shows the letter up to date. Cheap parts run at
+  // once; the preview frame is rebuilt after typing pauses.
+  function refreshLetter() {
+    if (!DECISIONS || !DECISIONS.cl) { return; }
+    var cl = DECISIONS.cl;
+    var paras = letterParas();
+    var words = wordCount(paras), must = clMust(), cov = letterCovered();
+    clearEl(clStrip);
+    clStrip.appendChild(document.createTextNode(words + ' words '));
+    var aim = mk('span', { cls: 'cl-aim' }); aim.textContent = '(aim for 250–350)'; clStrip.appendChild(aim);
+    if (must.length) { clStrip.appendChild(document.createTextNode(' · Answers ' + cov + ' of ' + must.length + ' must-haves your résumé was missing')); }
+    rt$('rt-clText').value = letterText();
+    rt$('rt-clUndo').classList.toggle('hidden', !cl.polished);
+    var pn = rt$('rt-clPolishNote');
+    pn.textContent = cl.polished ? 'Polished ✓ Your facts and the posting’s keywords were kept.'
+      : cl.polishStale ? 'Your choices changed after polishing, so this is the draft again. Polish again to smooth it.'
+      : 'Optional, one small call: sends only this draft, the must-haves and the posting.';
+    // An Included letter card with a blank left can't reach the letter.
+    clCards().forEach(function(n) {
+      var d = DECISIONS.clnews[n.id], rev = root.querySelector('#rev-clnews-' + n.id);
+      var note = rev && rev.querySelector('.cl-pend');
+      if (!note || !d) { return; }
+      var stuck = d.status === 'approved' && looksUnfilled(d.text || '');
+      note.textContent = stuck ? 'Fill every blank to add this to the letter.' : '';
+      note.classList.toggle('hidden', !stuck);
+    });
+    clearTimeout(clPreviewTimer);
+    clPreviewTimer = setTimeout(paintLetterPreview, 300);
+  }
+  function openCoverLetter() {
+    if (!ANALYSIS || !DECISIONS) { return; }
+    if (!DECISIONS.cl) {
+      DECISIONS.cl = { manager: '', company: (ANALYSIS.targetCompany || '').trim(), address: '', polished: null, polishStale: false, sigOn: true };
+    }
+    if (!DECISIONS.clnews) { DECISIONS.clnews = {}; }
+    // Letter cards start on Skip, with any blanks already picked for the résumé.
+    clCards().forEach(function(n) {
+      if (DECISIONS.clnews[n.id]) { return; }
+      var rd = DECISIONS.news[n.id] || {};
+      var picks = {}; Object.keys(rd.picks || {}).forEach(function(t) { picks[t] = rd.picks[t]; });
+      DECISIONS.clnews[n.id] = { status: 'skipped', text: n.phrasingIfYes, company: n.company || '', picks: picks, own: rd.own != null ? rd.own : null };
+    });
+    var filled = prefillLetterhead(LAST_RESUME);
+    LH_FIELDS.forEach(function(f) { rt$('rt-lh-' + f[0]).value = LETTERHEAD[f[0]] || ''; });
+    rt$('rt-lhDesc').textContent = LETTERHEAD.name
+      ? 'Saved on this computer and used on every letter.' + (filled ? ' Filled in from your built résumé; check it once.' : '')
+      : 'Build your résumé first to fill these in, or type them. They’re saved for every letter.';
+    rt$('rt-clMgr').value = DECISIONS.cl.manager;
+    rt$('rt-clCo').value = DECISIONS.cl.company;
+    rt$('rt-clAddr').value = DECISIONS.cl.address;
+    rt$('rt-clSigOn').checked = !!DECISIONS.cl.sigOn;
+    var role = (ANALYSIS.targetJobTitle || '').trim();
+    rt$('rt-clDesc').textContent = 'For ' + (role || 'this role') + (DECISIONS.cl.company ? ' at ' + DECISIONS.cl.company : '') +
+      '. Written from this Tailor run using only what you approved' + (LAST_RESUME ? ' and your built résumé' : '') + '.';
+    renderAdditions('clnews');
+    var none = !clCards().length;
+    rt$('rt-clNoCards').textContent = 'No extra questions: every possible addition is already on your résumé, or none came back for this posting.';
+    rt$('rt-clNoCards').classList.toggle('hidden', !none);
+    drawSig();
+    refreshLetter();
+    clearTimeout(clPreviewTimer); paintLetterPreview();
+    clPanel.classList.add('open');
+    clPanel.scrollTop = 0;
+  }
+  function closeCoverLetter() { clPanel.classList.remove('open'); }
+  rt$('rt-clOpen').addEventListener('click', openCoverLetter);
+  rt$('rt-clBack').addEventListener('click', closeCoverLetter);
+  [['rt-clMgr', 'manager'], ['rt-clCo', 'company'], ['rt-clAddr', 'address']].forEach(function(p) {
+    rt$(p[0]).addEventListener('input', function() { DECISIONS.cl[p[1]] = rt$(p[0]).value; refreshLetter(); });
+  });
+
+  // Signature pad. Points are kept in the 400×120 box whatever size the pad
+  // is drawn at, and saved when each stroke ends.
+  var sigCur = null;
+  function drawSig() {
+    var ctx = sigCanvas.getContext && sigCanvas.getContext('2d');
+    if (!ctx) { return; }
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, SIG_W, SIG_H);
+    ctx.strokeStyle = SIG_INK; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (typeof Path2D !== 'undefined') { ctx.stroke(new Path2D(sigPath(SIGNATURE))); }
+  }
+  function sigPoint(e) {
+    var r = sigCanvas.getBoundingClientRect();
+    var x = r.width ? (e.clientX - r.left) / r.width * SIG_W : 0, y = r.height ? (e.clientY - r.top) / r.height * SIG_H : 0;
+    return [Math.round(Math.max(0, Math.min(SIG_W, x)) * 10) / 10, Math.round(Math.max(0, Math.min(SIG_H, y)) * 10) / 10];
+  }
+  sigCanvas.addEventListener('pointerdown', function(e) {
+    e.preventDefault();
+    try { sigCanvas.setPointerCapture(e.pointerId); } catch (err) { void err; }
+    sigCur = [sigPoint(e)]; SIGNATURE.push(sigCur); drawSig();
+  });
+  sigCanvas.addEventListener('pointermove', function(e) {
+    if (!sigCur) { return; }
+    var p = sigPoint(e), last = sigCur[sigCur.length - 1];
+    if (Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) < 1.5) { return; }
+    sigCur.push(p); drawSig();
+  });
+  var sigEnd = function() {
+    if (!sigCur) { return; }
+    sigCur = null;
+    GM_setValue('rt_signature', SIGNATURE);
+    refreshLetter();
+  };
+  sigCanvas.addEventListener('pointerup', sigEnd);
+  sigCanvas.addEventListener('pointercancel', sigEnd);
+  rt$('rt-clSigClear').addEventListener('click', function() {
+    SIGNATURE = []; GM_setValue('rt_signature', SIGNATURE); drawSig(); refreshLetter();
+  });
+  rt$('rt-clSigOn').addEventListener('change', function() { DECISIONS.cl.sigOn = rt$('rt-clSigOn').checked; refreshLetter(); });
+
+  // Polish: the one API call. It may only reword: a number that isn't in the
+  // draft means something was invented, so that result is thrown away.
+  rt$('rt-clPolish').addEventListener('click', function() {
+    var btn = rt$('rt-clPolish'), errEl = rt$('rt-clErr');
+    clearEl(errEl);
+    var draft = draftLetter(), key = JSON.stringify(draft);
+    var must = clMust();
+    var user = 'DRAFT COVER LETTER BODY:\n' + draft.join('\n\n') +
+      '\n\nMUST-HAVES THIS JOB ASKS FOR:\n' + (must.length ? must.map(function(m) { return '- ' + m; }).join('\n') : '(none listed)') +
+      '\n\nJOB POSTING:\n' + capTokens(LAST_JD || '', 2000) +
+      '\n\nReturn JSON exactly:\n{"paragraphs":["..."]}';
+    btn.disabled = true;
+    setBtnSpinner(btn, 'Polishing…');
+    activeAbort = new AbortController();
+    callClaudeAndParse(SYS_C, user, 8000, 'cover').then(function(parsed) {
+      var paras = (parsed && Array.isArray(parsed.paragraphs) ? parsed.paragraphs : [])
+        .filter(function(p) { return typeof p === 'string' && p.trim(); }).map(function(p) { return p.replace(/\s+/g, ' ').trim(); });
+      if (!paras.length) { throw new Error('Polish came back empty. Your draft is unchanged; try again.'); }
+      var nums = function(t) { return (t.match(/\d[\d,.]*/g) || []).map(function(n) { return n.replace(/[.,]+$/, ''); }); };
+      var draftNums = nums(draft.join(' '));
+      var added = nums(paras.join(' ')).filter(function(n) { return draftNums.indexOf(n) === -1; });
+      if (added.length) { throw new Error('The polished version added a number that isn’t in your draft (' + added[0] + '), so it wasn’t used. Your draft is unchanged; try again.'); }
+      DECISIONS.cl.polished = { paras: paras, base: key };
+      DECISIONS.cl.polishStale = false;
+      refreshLetter();
+    }).catch(function(e) {
+      if (e.message !== 'Stopped.') { showErr(errEl, e.message); }
+    }).then(function() {
+      activeAbort = null;
+      btn.disabled = false;
+      btn.textContent = '✨ Polish wording';
+    });
+  });
+  rt$('rt-clUndo').addEventListener('click', function() { DECISIONS.cl.polished = null; DECISIONS.cl.polishStale = false; refreshLetter(); });
+
+  rt$('rt-clViewPdf').addEventListener('click', function() {
+    ['rt-clPreview', 'rt-clExport'].forEach(function(id) { rt$(id).classList.remove('hidden'); });
+    ['rt-clText', 'rt-clCopy'].forEach(function(id) { rt$(id).classList.add('hidden'); });
+    rt$('rt-clViewPdf').classList.add('on'); rt$('rt-clViewTxt').classList.remove('on');
+  });
+  rt$('rt-clViewTxt').addEventListener('click', function() {
+    ['rt-clPreview', 'rt-clExport'].forEach(function(id) { rt$(id).classList.add('hidden'); });
+    ['rt-clText', 'rt-clCopy'].forEach(function(id) { rt$(id).classList.remove('hidden'); });
+    rt$('rt-clViewTxt').classList.add('on'); rt$('rt-clViewPdf').classList.remove('on');
+  });
+  rt$('rt-clExport').addEventListener('click', function() {
+    var fname = buildExportFilename({ name: LETTERHEAD.name || (LAST_RESUME && LAST_RESUME.name) || '', experience: (LAST_RESUME && LAST_RESUME.experience) || [] }, 'Cover_Letter');
+    openPrint(withFilenameTitle(buildLetterHTML(), fname), rt$('rt-clMsg'));
+  });
+  rt$('rt-clCopy').addEventListener('click', function() {
+    var t = rt$('rt-clText');
+    t.focus(); t.select();
+    var copyFallback = function() { try { document.execCommand('copy'); } catch (e2) { void e2; } };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t.value).catch(copyFallback); } else { copyFallback(); }
+    rt$('rt-clMsg').textContent = 'Copied ✓ — paste straight into the application.';
+    setTimeout(function() { rt$('rt-clMsg').textContent = ''; }, 3000);
   });
 
 })();
