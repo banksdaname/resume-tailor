@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.12.0
+// @version      1.12.1
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Styled PDF + ATS plain text, plus a matching cover letter.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.12.0';
+  var SCRIPT_VERSION = '1.12.1';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -2969,7 +2969,7 @@
      The "Did you…?" additions you Skipped for the résumé come back as cards,
      in the same three suggestion styles. Polish is the only API call, and it
      sends just the draft, the must-haves and the posting. */
-  var SYS_C = 'You are an expert cover-letter editor. You get a factual draft cover letter built from the candidate’s approved résumé material, the must-haves the job asks for, and the job posting. Rewrite the draft so it reads naturally in the candidate’s voice: clear, factual and warm, with no buzzwords or clichés.\nRULES:\n1. Keep every fact in the draft true and unchanged in substance. Add no new facts, numbers, employers, titles, tools, skills or claims, and never raise seniority or scope.\n2. Keep every must-have and keyword phrase that appears in the draft, worded the way the posting words it, so keyword screening still finds them.\n3. Use the posting only to choose wording and to write one honest sentence on why this role or company appeals, based only on what the posting says. Never claim knowledge of the company beyond the posting.\n4. Structure: an opening paragraph naming the role, one or two proof paragraphs, a short paragraph on why this role, and a short close.\n5. Aim for 250-350 words if the draft supports it. Never pad to reach the count.\n6. Leave out the greeting, sign-off, name, date and addresses; they are added separately.\nOutput ONLY valid JSON. No markdown, no preamble.';
+  var SYS_C = 'You are an expert cover-letter editor. You get the body of a cover letter the candidate is working on: a draft built from their approved résumé material, sentences they confirmed from prompts, and possibly their own edits. You also get the must-haves the job asks for and the job posting. Make the whole letter read naturally in the candidate’s voice: clear, factual and warm, with no buzzwords or clichés.\nRULES:\n1. Smooth ALL of the wording, the candidate’s own edits included: fix stiff, choppy or repeated phrasing, join sentences that belong together and vary how sentences begin. Keep the meaning and intent of every sentence.\n2. Keep every fact true and unchanged in substance. Add no new facts, numbers, employers, titles, tools, skills or claims, never raise seniority or scope, and drop nothing the letter says.\n3. Keep every must-have and keyword phrase that appears in the letter, worded the way the posting words it, so keyword screening still finds them.\n4. Use the posting only to choose wording and to write one honest sentence on why this role or company appeals, based only on what the posting says. Never claim knowledge of the company beyond the posting.\n5. Keep the order: an opening paragraph naming the role, the proof, why this role, and a short close. You may merge or split paragraphs for flow.\n6. Aim for 250-350 words if the letter supports it. Never pad to reach the count.\n7. Leave out the greeting, sign-off, name, date and addresses; they are added separately.\nOutput ONLY valid JSON. No markdown, no preamble.';
 
   var CL_VERBS = /^(led|built|ran|won|grew|cut|made|drove|wrote|set|began|brought|taught|sold|took|kept|met|spent|found|held|oversaw|saw|chose|did|got|gave|rebuilt|undertook|overcame|thought|sought|fought|bought|dug|shot|spun|hit|put|split|sped|stood|understood|went|became|rose|beat|bid|lent|sent|leant|read|told|rode|flew|drew|knew|threw|upheld|withdrew)$/i;
   // A bullet that starts with a past-tense verb ("Led…", "Cut…") can follow "I".
@@ -3047,7 +3047,8 @@
     return out;
   }
   // The draft letter body as paragraphs. Pure code, no API call.
-  function draftLetter() {
+  function draftLetter() { return draftParts().map(function(p) { return p.text; }); }
+  function draftParts() {
     var cl = (DECISIONS && DECISIONS.cl) || {};
     var role = ((ANALYSIS && ANALYSIS.targetJobTitle) || '').trim();
     // In sentences the company reads without "Inc", "LLC" and the like.
@@ -3055,35 +3056,99 @@
     var facts = letterFacts();
     var p1 = facts.slice(0, 2), p2 = facts.slice(2, 5);
     var paras = [];
+    var put = function(key, text) { if (text) { paras.push({ key: key, text: text }); } };
 
     // A résumé summary is often a phrase ("Maintenance lead with ten
     // years…"), not a sentence, so it gets a lead-in unless it already
     // speaks as "I".
     var summary = clSentence((LAST_RESUME && LAST_RESUME.summary) || (KB && KB.originalSummary) || '');
     if (summary && !/(^|\W)(I|I\u2019m|I'm|my|My)\W/.test(summary)) { summary = 'My background in brief: ' + clLcFirst(summary); }
-    paras.push(('I am writing to apply for ' + (role ? 'the ' + role + ' position' : 'this position') + (company ? ' at ' + company : '') + '. ' + summary).trim());
+    put('open', ('I am writing to apply for ' + (role ? 'the ' + role + ' position' : 'this position') + (company ? ' at ' + company : '') + '. ' + summary).trim());
     var st = { co: null, n: 0 };
 
     var covered = [];
     p1.forEach(function(f) { if (f.closes && covered.indexOf(f.closes) === -1) { covered.push(f.closes); } });
     var s1 = clFactSentences(p1, st);
-    if (s1.length) { paras.push(((covered.length ? 'This role calls for ' + clAnd(covered) + '. ' : '') + s1.join(' ')).trim()); }
+    if (s1.length) { put('proof', ((covered.length ? 'This role calls for ' + clAnd(covered) + '. ' : '') + s1.join(' ')).trim()); }
 
     var s2 = clFactSentences(p2, st);
     var asked = ((ANALYSIS.skills && ANALYSIS.skills.toAdd) || []).map(function(o) { return o && o.skill; }).filter(function(sk) { return sk && DECISIONS.skills.add.has(sk); }).slice(0, 4);
     if (asked.length) { s2.push((s1.length || s2.length ? 'My skills also include ' : 'My skills include ') + clAnd(asked) + ', all named in this posting.'); }
-    if (s2.length) { paras.push(s2.join(' ')); }
+    if (s2.length) { put('more', s2.join(' ')); }
 
-    paras.push('I would welcome the chance to bring this experience to ' + (company || 'your team') + (role ? ' as your next ' + role : '') + '.');
-    paras.push('Thank you for your time and consideration. I look forward to talking with you about how I can help.');
+    put('why', 'I would welcome the chance to bring this experience to ' + (company || 'your team') + (role ? ' as your next ' + role : '') + '.');
+    put('close', 'Thank you for your time and consideration. I look forward to talking with you about how I can help.');
     return paras;
   }
-  // What the letter shows: the polished wording while it still matches the
-  // draft it came from, otherwise the draft.
+  // The letter body. Until you type in it or Polish it, it follows the
+  // draft live. After that it's your text: cards add, change or remove their
+  // own sentence in it, and nothing else rewrites it except Polish.
+  function bodyParas(t) {
+    return String(t || '').split(/\n\s*\n/).map(function(p) { return p.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  }
   function letterParas() {
-    var cl = DECISIONS.cl, draft = draftLetter(), key = JSON.stringify(draft);
-    if (cl.polished && cl.polished.base !== key) { cl.polished = null; cl.polishStale = true; }
-    return cl.polished ? cl.polished.paras : draft;
+    var cl = DECISIONS.cl;
+    return cl.body == null ? draftLetter() : bodyParas(cl.body);
+  }
+  // The sentence a letter card adds while it's Included and fully filled.
+  function clCardSentence(n) {
+    var d = DECISIONS.clnews && DECISIONS.clnews[n.id];
+    if (!d || d.status !== 'approved') { return null; }
+    var t = clTrimEnd(d.text);
+    if (!t || looksUnfilled(t)) { return null; }
+    return clFactSentences([{ text: t, company: n.company || '', closes: '' }], { co: null, n: 0 })[0] || null;
+  }
+  // From now on the letter is text you own. Cards already in it are tracked
+  // so a later Skip can take their sentence back out.
+  function takeBody(text) {
+    var cl = DECISIONS.cl;
+    if (cl.body == null) {
+      cl.inserted = {};
+      clCards().forEach(function(n) { var sn = clCardSentence(n); if (sn) { cl.inserted[n.id] = sn; } });
+    }
+    cl.body = text;
+  }
+  var CL_SENT_SPLIT = /(?<=[.!?])\s+/;
+  // Finds the sentence that best matches s (exactly, or after Polish has
+  // reworded it) as [paragraph, sentence], or null.
+  function findSentence(paras, s) {
+    var best = null, bestSim = 0.55;
+    paras.forEach(function(p, i) {
+      p.split(CL_SENT_SPLIT).forEach(function(sent, j) {
+        var sim = sent.trim() === s ? 1 : textSimilarity(sent, s);
+        if (sim >= bestSim) { bestSim = sim; best = [i, j]; }
+      });
+    });
+    return best;
+  }
+  // Keeps card sentences in the body in step with the cards: Include adds
+  // the sentence to the proof, a changed pick replaces it in place, Skip
+  // removes it. Your other wording is never touched.
+  function syncCardSentences() {
+    var cl = DECISIONS.cl;
+    if (cl.body == null) { return; }
+    cl.inserted = cl.inserted || {};
+    clCards().forEach(function(n) {
+      var want = clCardSentence(n), have = cl.inserted[n.id] || null;
+      if (want === have) { return; }
+      var paras = bodyParas(cl.body), at = have ? findSentence(paras, have) : null;
+      if (have && !at) {
+        cl.note = 'Couldn’t find the sentence for “' + n.question + '” in your letter. ' + (want ? 'The new one was added; delete' : 'Delete') + ' the old wording in Edit if it’s still there.';
+      }
+      if (at) {
+        var sents = paras[at[0]].split(CL_SENT_SPLIT);
+        if (want) { sents[at[1]] = want; } else { sents.splice(at[1], 1); }
+        paras[at[0]] = sents.join(' ').trim();
+        paras = paras.filter(Boolean);
+      } else if (want) {
+        // The proof sits before "why this role" and the close.
+        var idx = paras.length >= 4 ? paras.length - 3 : (paras.length >= 2 ? 1 : paras.length);
+        if (idx < paras.length) { paras[idx] += ' ' + want; } else { paras.push(want); }
+      }
+      cl.body = paras.join('\n\n');
+      cl.polished = false;
+      if (want) { cl.inserted[n.id] = want; } else { delete cl.inserted[n.id]; }
+    });
   }
   function letterCovered() {
     var seen = {};
@@ -3228,8 +3293,11 @@
   var clAddCard = mkCard(mk('div', { id: 'rt-clNewSec' }), mk('p', { cls: 'note hidden', id: 'rt-clNoCards' }));
 
   var clPolishBtn = mkBtn('primary', 'rt-clPolish', '✨ Polish wording');
-  var clUndoBtn = mkBtn('ghost hidden', 'rt-clUndo', 'Use the draft');
-  var clViewPdf = mk('button', { id: 'rt-clViewPdf', cls: 'on' }); clViewPdf.textContent = 'PDF preview';
+  var clUndoBtn = mkBtn('ghost hidden', 'rt-clUndo', 'Undo polish');
+  var clRedraft = mkBtn('ghost hidden', 'rt-clRedraft', 'Start over from the draft');
+  clRedraft.title = 'Rebuilds the letter from this Tailor run and your cards. Use it after changing things on the r\u00E9sum\u00E9 side.';
+  var clViewEdit = mk('button', { id: 'rt-clViewEdit', cls: 'on' }); clViewEdit.textContent = 'Edit';
+  var clViewPdf = mk('button', { id: 'rt-clViewPdf' }); clViewPdf.textContent = 'PDF preview';
   var clViewTxt = mk('button', { id: 'rt-clViewTxt' }); clViewTxt.textContent = 'Text · copy';
   var clExport = mkBtn('primary', 'rt-clExport', 'Export PDF'); clExport.style.marginLeft = 'auto';
   var clCopy = mkBtn('primary hidden', 'rt-clCopy', 'Copy text'); clCopy.style.marginLeft = 'auto';
@@ -3237,11 +3305,12 @@
   var clLetterCard = mkCard(
     ap(mk('h2'), document.createTextNode('📄 Letter')),
     ap(mk('p', { cls: 'desc', id: 'rt-clDesc' })),
-    mkRow(clPolishBtn, clUndoBtn),
+    mkRow(clPolishBtn, clUndoBtn, clRedraft),
     mk('p', { cls: 'note', id: 'rt-clPolishNote' }),
     mk('div', { id: 'rt-clErr' }),
-    mkRow(ap(mk('div', { cls: 'seg' }), clViewPdf, clViewTxt), clExport, clCopy),
-    mk('div', { id: 'rt-clPreview' }),
+    mkRow(ap(mk('div', { cls: 'seg' }), clViewEdit, clViewPdf, clViewTxt), clExport, clCopy),
+    mk('div', { id: 'rt-clEdit' }),
+    mk('div', { id: 'rt-clPreview', cls: 'hidden' }),
     clTextArea,
     mk('p', { cls: 'note', id: 'rt-clMsg' })
   );
@@ -3289,12 +3358,27 @@
     frame.src = clPreviewUrl;
     box.appendChild(frame);
   }
+  // The Edit view: the whole letter body in one box. Blank lines separate
+  // paragraphs. The box is never rewritten while you're typing in it.
+  var clBodyTa = mk('textarea', { rows: '16', id: 'rt-clBody' });
+  rt$('rt-clEdit').appendChild(ap(mk('p', { cls: 'note' }), document.createTextNode('Type anywhere; leave a blank line between paragraphs. Cards you include add their sentence here, and Polish smooths all of it, your own wording included, without changing what it says.')));
+  rt$('rt-clEdit').appendChild(clBodyTa);
+  clBodyTa.addEventListener('input', function() {
+    takeBody(clBodyTa.value);
+    DECISIONS.cl.polished = false;
+    DECISIONS.cl.note = '';
+    refreshLetter();
+  });
   // Brings everything that shows the letter up to date. Cheap parts run at
   // once; the preview frame is rebuilt after typing pauses.
   function refreshLetter() {
     if (!DECISIONS || !DECISIONS.cl) { return; }
     var cl = DECISIONS.cl;
+    syncCardSentences();
     var paras = letterParas();
+    var focused = (root.getRootNode && root.getRootNode().activeElement) || document.activeElement;
+    if (clBodyTa !== focused) { clBodyTa.value = paras.join('\n\n'); }
+    rt$('rt-clRedraft').classList.toggle('hidden', cl.body == null);
     var words = wordCount(paras), must = clMust(), cov = letterCovered();
     clearEl(clStrip);
     clStrip.appendChild(document.createTextNode(words + ' words '));
@@ -3303,9 +3387,9 @@
     rt$('rt-clText').value = letterText();
     rt$('rt-clUndo').classList.toggle('hidden', !cl.polished);
     var pn = rt$('rt-clPolishNote');
-    pn.textContent = cl.polished ? 'Polished ✓ Your facts and the posting’s keywords were kept.'
-      : cl.polishStale ? 'Your choices changed after polishing, so this is the draft again. Polish again to smooth it.'
-      : 'Optional, one small call: sends only this draft, the must-haves and the posting.';
+    pn.textContent = cl.note ? cl.note
+      : cl.polished ? 'Polished \u2713 Your facts and the posting\u2019s keywords were kept. Edit anything, include more cards, or polish again.'
+      : 'Optional, one small call: smooths the whole letter, your edits and card sentences included, without changing what it says. Sends only the letter, the must-haves and the posting.';
     // An Included letter card with a blank left can't reach the letter.
     clCards().forEach(function(n) {
       var d = DECISIONS.clnews[n.id], rev = root.querySelector('#rev-clnews-' + n.id);
@@ -3321,7 +3405,7 @@
   function openCoverLetter() {
     if (!ANALYSIS || !DECISIONS) { return; }
     if (!DECISIONS.cl) {
-      DECISIONS.cl = { manager: '', company: (ANALYSIS.targetCompany || '').trim(), address: '', polished: null, polishStale: false, sigOn: true };
+      DECISIONS.cl = { manager: '', company: (ANALYSIS.targetCompany || '').trim(), address: '', polished: false, sigOn: true, body: null, inserted: {}, prePolish: null, note: '' };
     }
     if (!DECISIONS.clnews) { DECISIONS.clnews = {}; }
     // Letter cards start on Skip, with any blanks already picked for the résumé.
@@ -3357,7 +3441,14 @@
   rt$('rt-clOpen').addEventListener('click', openCoverLetter);
   rt$('rt-clBack').addEventListener('click', closeCoverLetter);
   [['rt-clMgr', 'manager'], ['rt-clCo', 'company'], ['rt-clAddr', 'address']].forEach(function(p) {
-    rt$(p[0]).addEventListener('input', function() { DECISIONS.cl[p[1]] = rt$(p[0]).value; refreshLetter(); });
+    rt$(p[0]).addEventListener('input', function() {
+      var cl = DECISIONS.cl, was = stripCompanySuffix((cl.company || '').trim());
+      cl[p[1]] = rt$(p[0]).value;
+      // A renamed company is renamed in your own letter text too.
+      var now = stripCompanySuffix((cl.company || '').trim());
+      if (p[1] === 'company' && cl.body != null && was && now && was !== now) { cl.body = cl.body.split(was).join(now); }
+      refreshLetter();
+    });
   });
 
   // Signature pad. Points are kept in the 400×120 box whatever size the pad
@@ -3400,14 +3491,16 @@
   });
   rt$('rt-clSigOn').addEventListener('change', function() { DECISIONS.cl.sigOn = rt$('rt-clSigOn').checked; refreshLetter(); });
 
-  // Polish: the one API call. It may only reword: a number that isn't in the
-  // draft means something was invented, so that result is thrown away.
+  // Polish: the one API call. It smooths the letter as it stands now (draft,
+  // card sentences and your edits) and the result becomes the letter, which
+  // you can keep editing. It may only reword: a number that isn't already in
+  // the letter means something was invented, so that result is thrown away.
   rt$('rt-clPolish').addEventListener('click', function() {
     var btn = rt$('rt-clPolish'), errEl = rt$('rt-clErr');
     clearEl(errEl);
-    var draft = draftLetter(), key = JSON.stringify(draft);
+    var cur = letterParas();
     var must = clMust();
-    var user = 'DRAFT COVER LETTER BODY:\n' + draft.join('\n\n') +
+    var user = 'COVER LETTER BODY (paragraphs separated by blank lines):\n' + cur.join('\n\n') +
       '\n\nMUST-HAVES THIS JOB ASKS FOR:\n' + (must.length ? must.map(function(m) { return '- ' + m; }).join('\n') : '(none listed)') +
       '\n\nJOB POSTING:\n' + capTokens(LAST_JD || '', 2000) +
       '\n\nReturn JSON exactly:\n{"paragraphs":["..."]}';
@@ -3417,13 +3510,16 @@
     callClaudeAndParse(SYS_C, user, 8000, 'cover').then(function(parsed) {
       var paras = (parsed && Array.isArray(parsed.paragraphs) ? parsed.paragraphs : [])
         .filter(function(p) { return typeof p === 'string' && p.trim(); }).map(function(p) { return p.replace(/\s+/g, ' ').trim(); });
-      if (!paras.length) { throw new Error('Polish came back empty. Your draft is unchanged; try again.'); }
+      if (!paras.length) { throw new Error('Polish came back empty. Your letter is unchanged; try again.'); }
       var nums = function(t) { return (t.match(/\d[\d,.]*/g) || []).map(function(n) { return n.replace(/[.,]+$/, ''); }); };
-      var draftNums = nums(draft.join(' '));
-      var added = nums(paras.join(' ')).filter(function(n) { return draftNums.indexOf(n) === -1; });
-      if (added.length) { throw new Error('The polished version added a number that isn’t in your draft (' + added[0] + '), so it wasn’t used. Your draft is unchanged; try again.'); }
-      DECISIONS.cl.polished = { paras: paras, base: key };
-      DECISIONS.cl.polishStale = false;
+      var known = nums(cur.join(' '));
+      var added = nums(paras.join(' ')).filter(function(n) { return known.indexOf(n) === -1; });
+      if (added.length) { throw new Error('The polished version added a number that isn’t in your letter (' + added[0] + '), so it wasn’t used. Your letter is unchanged; try again.'); }
+      var cl = DECISIONS.cl;
+      cl.prePolish = { body: cl.body, inserted: JSON.parse(JSON.stringify(cl.inserted || {})) };
+      takeBody(paras.join('\n\n'));
+      cl.polished = true;
+      cl.note = '';
       refreshLetter();
     }).catch(function(e) {
       if (e.message !== 'Stopped.') { showErr(errEl, e.message); }
@@ -3433,18 +3529,34 @@
       btn.textContent = '✨ Polish wording';
     });
   });
-  rt$('rt-clUndo').addEventListener('click', function() { DECISIONS.cl.polished = null; DECISIONS.cl.polishStale = false; refreshLetter(); });
+  // Undo polish is offered until the polished letter is changed.
+  rt$('rt-clUndo').addEventListener('click', function() {
+    var cl = DECISIONS.cl, pp = cl.prePolish;
+    if (!pp) { return; }
+    cl.body = pp.body; cl.inserted = pp.inserted; cl.prePolish = null; cl.polished = false; cl.note = '';
+    refreshLetter();
+  });
+  rt$('rt-clRedraft').addEventListener('click', function() {
+    if (!window.confirm('Replace your letter with a fresh draft from this Tailor run and your cards? Your edits and polish will be lost.')) { return; }
+    var cl = DECISIONS.cl;
+    cl.body = null; cl.inserted = {}; cl.prePolish = null; cl.polished = false; cl.note = '';
+    refreshLetter();
+  });
 
-  rt$('rt-clViewPdf').addEventListener('click', function() {
-    ['rt-clPreview', 'rt-clExport'].forEach(function(id) { rt$(id).classList.remove('hidden'); });
-    ['rt-clText', 'rt-clCopy'].forEach(function(id) { rt$(id).classList.add('hidden'); });
-    rt$('rt-clViewPdf').classList.add('on'); rt$('rt-clViewTxt').classList.remove('on');
-  });
-  rt$('rt-clViewTxt').addEventListener('click', function() {
-    ['rt-clPreview', 'rt-clExport'].forEach(function(id) { rt$(id).classList.add('hidden'); });
-    ['rt-clText', 'rt-clCopy'].forEach(function(id) { rt$(id).classList.remove('hidden'); });
-    rt$('rt-clViewTxt').classList.add('on'); rt$('rt-clViewPdf').classList.remove('on');
-  });
+  // Edit / PDF preview / Text views. Export works from Edit and PDF.
+  function setClView(v) {
+    rt$('rt-clEdit').classList.toggle('hidden', v !== 'edit');
+    rt$('rt-clPreview').classList.toggle('hidden', v !== 'pdf');
+    rt$('rt-clText').classList.toggle('hidden', v !== 'txt');
+    rt$('rt-clExport').classList.toggle('hidden', v === 'txt');
+    rt$('rt-clCopy').classList.toggle('hidden', v !== 'txt');
+    rt$('rt-clViewEdit').classList.toggle('on', v === 'edit');
+    rt$('rt-clViewPdf').classList.toggle('on', v === 'pdf');
+    rt$('rt-clViewTxt').classList.toggle('on', v === 'txt');
+  }
+  rt$('rt-clViewEdit').addEventListener('click', function() { setClView('edit'); });
+  rt$('rt-clViewPdf').addEventListener('click', function() { setClView('pdf'); });
+  rt$('rt-clViewTxt').addEventListener('click', function() { setClView('txt'); });
   rt$('rt-clExport').addEventListener('click', function() {
     var fname = buildExportFilename({ name: LETTERHEAD.name || (LAST_RESUME && LAST_RESUME.name) || '', experience: (LAST_RESUME && LAST_RESUME.experience) || [] }, 'Cover_Letter');
     openPrint(withFilenameTitle(buildLetterHTML(), fname), rt$('rt-clMsg'));

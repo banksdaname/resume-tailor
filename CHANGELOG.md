@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.1
+
+- **Edit your cover letter freely.** The letter now opens in an **Edit** view with the whole letter in one box. Type anywhere; your wording holds when you include or skip cards afterwards. Each card adds, changes or removes only its own sentence, so a changed pick swaps its sentence in place.
+- **Polish smooths everything you've put in.** It now rewrites the letter as it stands, your own wording and card sentences included, to remove stiffness without changing what it says. The polished letter is yours to keep editing, add cards to, or polish again. **Undo polish** is offered until you change it.
+- **Start over from the draft** rebuilds the letter from the Tailor run and your cards, for example after changing something on the résumé side. Renaming the company in **To** also renames it in your letter text.
+
 ## 1.12.0
 
 - **Write a cover letter from the same run.** After Tailor, a **Write a cover letter →** button at the bottom of the review opens a cover-letter panel that slides over the Tailor panel. **← Back to résumé** returns with all your choices kept.
