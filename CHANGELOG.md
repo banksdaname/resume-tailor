@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.2
+
+- **Smoother drawn signatures.** Each stroke is evened out when you lift the pen or mouse, so a shaky mouse line comes out like a pen line. The start and end of each stroke stay where you put them. Signatures drawn before this version are unchanged; tap Clear and redraw to smooth one.
+- **Type your signature in script instead.** Under Signature, pick **Type it in script** to sign with your name in one of three script styles: Neat, Handwritten or Flourish. Each sample shows your own name. It uses your letterhead name unless you type a different one, and prints in blue ink above your typed name like a drawn signature. Your choice is remembered.
+- **You can see which view is on.** The selected button in the PDF / ATS, Edit / PDF preview / Text and Draw / Type toggles is now highlighted.
+
 ## 1.12.1
 
 - **Edit your cover letter freely.** The letter now opens in an **Edit** view with the whole letter in one box. Type anywhere; your wording holds when you include or skip cards afterwards. Each card adds, changes or removes only its own sentence, so a changed pick swaps its sentence in place.

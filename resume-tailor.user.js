@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.12.1
+// @version      1.12.2
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Styled PDF + ATS plain text, plus a matching cover letter.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.12.1';
+  var SCRIPT_VERSION = '1.12.2';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -366,6 +366,14 @@
     #rt-root .cl-sig{display:block;width:100%;aspect-ratio:400/120;background:#fff;border:1px dashed #9aa0ab;border-radius:8px;touch-action:none;cursor:crosshair}
     #rt-root .cl-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin:0}
     #rt-root .cl-check input{margin:0}
+    /* Two/three-way view toggles (PDF/ATS, Edit/PDF/Text, Draw/Type): show which is on. */
+    #rt-root .seg>button{border:none;background:transparent;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;color:#6b7280;font-family:inherit}
+    #rt-root .seg>button:hover{color:#1c2230}
+    #rt-root .seg>button.on{background:#3b4cca;color:#fff;box-shadow:0 1px 2px rgba(59,76,202,.25)}
+    #rt-root .cl-font{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 12px;border:1px solid #e6e8ee;border-radius:8px;background:#fff;cursor:pointer;margin:8px 6px 0 0;font-family:inherit}
+    #rt-root .cl-font .cf-name{color:#1d3c9e;line-height:1.25;white-space:nowrap}
+    #rt-root .cl-font .cf-lbl{font-size:10.5px;font-weight:600;color:#6b7280;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    #rt-root .cl-font.on{border-color:#3b4cca;box-shadow:0 0 0 3px #eef0fb}
     #rt-root #rt-clPreview iframe{display:block;width:100%;height:560px;border:none}
     #rt-root #rt-clText{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;background:#fff}
   `;
@@ -3192,6 +3200,51 @@
   var SIGNATURE = GM_getValue('rt_signature', null);
   if (typeof SIGNATURE === 'string') { try { SIGNATURE = JSON.parse(SIGNATURE); } catch (e) { SIGNATURE = null; } }
   if (!Array.isArray(SIGNATURE)) { SIGNATURE = []; }
+  // Evens out a finished stroke so a shaky mouse line reads like a pen line:
+  // two light averaging passes take out jitter, then two rounds of corner
+  // cutting (Chaikin) round off the remaining kinks. The ends stay put.
+  function smoothStroke(st) {
+    if (!Array.isArray(st) || st.length < 3) { return st; }
+    var pts = st.map(function(p) { return [p[0], p[1]]; });
+    for (var pass = 0; pass < 2; pass++) {
+      pts = pts.map(function(p, i) {
+        if (i === 0 || i === pts.length - 1) { return p; }
+        return [(pts[i - 1][0] + 2 * p[0] + pts[i + 1][0]) / 4, (pts[i - 1][1] + 2 * p[1] + pts[i + 1][1]) / 4];
+      });
+    }
+    for (var it = 0; it < 2; it++) {
+      var out = [pts[0]];
+      for (var i = 0; i < pts.length - 1; i++) {
+        var a = pts[i], b = pts[i + 1];
+        out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+      }
+      out.push(pts[pts.length - 1]);
+      pts = out;
+    }
+    return pts.map(function(p) { return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]; });
+  }
+  // Typed signature: your name in a script font, for when drawing with a
+  // mouse is awkward. [Google Fonts family, label, size in pt, weight]
+  var SIG_FONTS = [
+    ['Dancing Script', 'Neat', 28, 600],
+    ['Homemade Apple', 'Handwritten', 20, 400],
+    ['Mrs Saint Delafield', 'Flourish', 38, 400]
+  ];
+  var SIG_FONT_URL = 'https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Homemade+Apple&family=Mrs+Saint+Delafield&display=swap';
+  var SIGTYPE = GM_getValue('rt_sigType', null);
+  if (typeof SIGTYPE === 'string') { try { SIGTYPE = JSON.parse(SIGTYPE); } catch (e) { SIGTYPE = null; } }
+  if (!SIGTYPE || typeof SIGTYPE !== 'object') { SIGTYPE = {}; }
+  if (SIGTYPE.mode !== 'type') { SIGTYPE.mode = 'draw'; }
+  if (!(SIGTYPE.font >= 0 && SIGTYPE.font < SIG_FONTS.length)) { SIGTYPE.font = 0; }
+  function sigTypedName() { return String(SIGTYPE.text || LETTERHEAD.name || '').trim(); }
+  // The signature for the PDF, in whichever form you chose, or ''.
+  function sigHtml() {
+    if (SIGTYPE.mode === 'type') {
+      var nm = sigTypedName(), f = SIG_FONTS[SIGTYPE.font];
+      return nm ? '<div class="sigt" style="font-family:\'' + f[0] + '\',cursive;font-size:' + f[2] + 'pt;font-weight:' + f[3] + '">' + esc(nm) + '</div>' : '';
+    }
+    return SIGNATURE.length ? sigSvg(SIGNATURE) : '';
+  }
   // Smooth curve through each stroke's points (midpoint quadratic curves).
   function sigPath(strokes) {
     return strokes.filter(function(st) { return st.length; }).map(function(st) {
@@ -3245,8 +3298,9 @@
     var name = (LETTERHEAD.name || '').trim();
     var contact = letterheadContact().map(function(p) { return '<span class="nb">' + esc(p) + '</span>'; }).join(' | ');
     var rcp = letterRecipient();
-    var sig = (DECISIONS.cl.sigOn && SIGNATURE.length) ? sigSvg(SIGNATURE) : '';
-    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<style>\n' +
+    var sig = DECISIONS.cl.sigOn ? sigHtml() : '';
+    var fontLink = (sig && SIGTYPE.mode === 'type') ? '<link rel="stylesheet" href="' + SIG_FONT_URL + '">\n' : '';
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + fontLink + '<style>\n' +
       '@page{size:Letter;margin:0.75in 0.9in}\n' +
       '*{margin:0;padding:0;box-sizing:border-box}\n' +
       'html,body{font-family:Arial,Helvetica,sans-serif;color:#111111;background:#ffffff}\n' +
@@ -3260,6 +3314,7 @@
       'p{margin-bottom:10px}\n' +
       '.close{margin-top:14px;break-inside:avoid;page-break-inside:avoid}\n' +
       '.sig{display:block;height:0.6in;width:auto;max-width:2.8in;margin:4px 0 2px}\n' +
+      '.sigt{color:' + SIG_INK + ';line-height:1.15;margin:6px 0 2px;white-space:nowrap}\n' +
       '.typed{margin-top:' + (sig ? '0' : '28px') + '}\n' +
       '</style>\n</head>\n<body>\n' +
       (name ? '<div class="name">' + esc(name) + '</div>\n' : '') +
@@ -3329,6 +3384,14 @@
   });
   var sigCanvas = mk('canvas', { cls: 'cl-sig', id: 'rt-clSig', width: String(SIG_W * 2), height: String(SIG_H * 2) });
   var sigClear = mkBtn('ghost', 'rt-clSigClear', 'Clear'); sigClear.style.cssText = 'padding:6px 11px;font-size:12px';
+  var sigDrawBtn = mk('button', { id: 'rt-clSigDraw' }); sigDrawBtn.textContent = 'Draw it';
+  var sigTypeBtn = mk('button', { id: 'rt-clSigType' }); sigTypeBtn.textContent = 'Type it in script';
+  var sigModeSeg = ap(mk('div', { cls: 'seg' }), sigDrawBtn, sigTypeBtn);
+  sigModeSeg.style.margin = '0 0 8px';
+  var sigTypeInp = mkInp('text', 'rt-clSigName', 'Name to sign');
+  var sigFonts = mk('div', { id: 'rt-clSigFonts' });
+  var sigDrawBox = ap(mk('div', { id: 'rt-clSigDrawBox' }), mk('canvas'), mkRow(sigClear));
+  var sigTypeBox = ap(mk('div', { id: 'rt-clSigTypeBox' }), sigTypeInp, sigFonts);
   var sigOnBox = mk('input', { type: 'checkbox', id: 'rt-clSigOn' });
   var sigOnLbl = ap(mk('label', { cls: 'cl-check' }), sigOnBox, document.createTextNode('Sign the PDF'));
   var clMeCard = mkCard(
@@ -3336,10 +3399,22 @@
     ap(mk('p', { cls: 'desc', id: 'rt-lhDesc' })),
     lhGrid,
     ap(mk('label'), document.createTextNode('Signature')),
-    sigCanvas,
-    mkRow(sigClear, sigOnLbl),
-    ap(mk('p', { cls: 'note' }), document.createTextNode('Draw with your mouse, finger or pen. It’s saved as you draw and prints in blue ink above your typed name. The text copy gets your typed name only.'))
+    sigModeSeg,
+    sigDrawBox,
+    sigTypeBox,
+    mkRow(sigOnLbl),
+    mk('p', { cls: 'note', id: 'rt-clSigNote' })
   );
+  sigDrawBox.replaceChild(sigCanvas, sigDrawBox.firstChild);
+  sigDrawBox.lastChild.style.marginTop = '6px';
+  SIG_FONTS.forEach(function(f, i) {
+    var b = mk('button', { cls: 'cl-font' }); b.dataset.font = String(i);
+    var nm = mk('span', { cls: 'cf-name' }); nm.style.fontFamily = "'" + f[0] + "',cursive"; nm.style.fontSize = Math.round(f[2] * 0.85) + 'px'; nm.style.fontWeight = String(f[3]);
+    var lb = mk('span', { cls: 'cf-lbl' }); lb.textContent = f[1];
+    b.appendChild(nm); b.appendChild(lb);
+    b.addEventListener('click', function() { SIGTYPE.font = i; GM_setValue('rt_sigType', SIGTYPE); paintSigMode(); refreshLetter(); });
+    sigFonts.appendChild(b);
+  });
   lhGrid.style.marginBottom = '12px';
 
   var clPanel = ap(mk('div', { cls: 'rt-cl', id: 'rt-cl' }), clHd, clStrip,
@@ -3374,6 +3449,7 @@
   function refreshLetter() {
     if (!DECISIONS || !DECISIONS.cl) { return; }
     var cl = DECISIONS.cl;
+    paintSigMode();
     syncCardSentences();
     var paras = letterParas();
     var focused = (root.getRootNode && root.getRootNode().activeElement) || document.activeElement;
@@ -3432,6 +3508,8 @@
     rt$('rt-clNoCards').textContent = 'No extra questions: every possible addition is already on your résumé, or none came back for this posting.';
     rt$('rt-clNoCards').classList.toggle('hidden', !none);
     drawSig();
+    if (SIGTYPE.mode === 'type') { loadSigFonts(); }
+    paintSigMode();
     refreshLetter();
     clearTimeout(clPreviewTimer); paintLetterPreview();
     clPanel.classList.add('open');
@@ -3480,7 +3558,10 @@
   });
   var sigEnd = function() {
     if (!sigCur) { return; }
+    // Smooth the stroke you just finished and show the smoothed line.
+    SIGNATURE[SIGNATURE.length - 1] = smoothStroke(sigCur);
     sigCur = null;
+    drawSig();
     GM_setValue('rt_signature', SIGNATURE);
     refreshLetter();
   };
@@ -3490,6 +3571,32 @@
     SIGNATURE = []; GM_setValue('rt_signature', SIGNATURE); drawSig(); refreshLetter();
   });
   rt$('rt-clSigOn').addEventListener('change', function() { DECISIONS.cl.sigOn = rt$('rt-clSigOn').checked; refreshLetter(); });
+  // Script fonts for the typed signature's samples. Fonts load page-wide, so
+  // one stylesheet in the page head reaches the panel too.
+  function loadSigFonts() {
+    if (document.getElementById('rt-sigfonts')) { return; }
+    var l = document.createElement('link');
+    l.id = 'rt-sigfonts'; l.rel = 'stylesheet'; l.href = SIG_FONT_URL;
+    (document.head || document.documentElement).appendChild(l);
+  }
+  function paintSigMode() {
+    var typed = SIGTYPE.mode === 'type';
+    sigDrawBtn.classList.toggle('on', !typed); sigTypeBtn.classList.toggle('on', typed);
+    sigDrawBox.classList.toggle('hidden', typed); sigTypeBox.classList.toggle('hidden', !typed);
+    if (document.activeElement !== sigTypeInp && (root.getRootNode && root.getRootNode().activeElement) !== sigTypeInp) { sigTypeInp.value = SIGTYPE.text || ''; }
+    sigTypeInp.placeholder = LETTERHEAD.name ? LETTERHEAD.name + ' (from your letterhead)' : 'Name to sign';
+    var nm = sigTypedName() || 'Your Name';
+    [].forEach.call(sigFonts.children, function(b) {
+      b.firstChild.textContent = nm;
+      b.classList.toggle('on', Number(b.dataset.font) === SIGTYPE.font);
+    });
+    rt$('rt-clSigNote').textContent = typed
+      ? 'Your name in the script you pick, in blue ink above your typed name. The text copy gets your typed name only.'
+      : 'Draw with your mouse, finger or pen; each stroke is smoothed when you lift. It\u2019s saved as you draw and prints in blue ink above your typed name. The text copy gets your typed name only.';
+  }
+  sigDrawBtn.addEventListener('click', function() { SIGTYPE.mode = 'draw'; GM_setValue('rt_sigType', SIGTYPE); paintSigMode(); drawSig(); refreshLetter(); });
+  sigTypeBtn.addEventListener('click', function() { SIGTYPE.mode = 'type'; GM_setValue('rt_sigType', SIGTYPE); loadSigFonts(); paintSigMode(); refreshLetter(); });
+  sigTypeInp.addEventListener('input', function() { SIGTYPE.text = sigTypeInp.value.replace(/\s+/g, ' ').trim(); GM_setValue('rt_sigType', SIGTYPE); paintSigMode(); refreshLetter(); });
 
   // Polish: the one API call. It smooths the letter as it stands now (draft,
   // card sentences and your edits) and the result becomes the letter, which
