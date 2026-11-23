@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.3
+
+- **Drawn signatures now really smooth out.** The smoothing added in 1.12.2 worked on a mouse's closely spaced points, so it changed almost nothing you could see. Each stroke is now re-spaced evenly and smoothed over a wider stretch when you lift the mouse or pen, which takes out hand shake and pixel steps while keeping loops their size. Signatures saved earlier are unchanged; tap Clear and redraw.
+- **Cover letter PDFs have side margins again.** The page margins are now part of the letter itself (0.9 in each side, 0.75 in top and bottom, repeated on every page), so they print even when Chrome's print dialog has Margins set to None. The PDF preview now shows the page at true proportions, margins included.
+
 ## 1.12.2
 
 - **Smoother drawn signatures.** Each stroke is evened out when you lift the pen or mouse, so a shaky mouse line comes out like a pen line. The start and end of each stroke stay where you put them. Signatures drawn before this version are unchanged; tap Clear and redraw to smooth one.
