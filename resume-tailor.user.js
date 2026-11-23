@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.11.1
+// @version      1.11.2
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Editorial Warmth PDF + ATS plain text.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.11.1';
+  var SCRIPT_VERSION = '1.11.2';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -1889,8 +1889,9 @@
     SUGG_STYLES.forEach(function(s) {
       var c = mk('span', { cls: 'chip' + (s[0] === style ? ' on-ok' : '') });
       c.textContent = s[1]; c.title = s[2];
+      // Re-tapping the current style still redraws, so a card the person just
+      // Skipped picks it up.
       c.addEventListener('click', function() {
-        if (suggStyle() === s[0]) { return; }
         CFG.suggStyle = s[0];
         GM_setValue('rt_suggStyle', s[0]);
         renderNews();
@@ -1904,7 +1905,13 @@
     ns.forEach(function(n) {
       var d = DECISIONS.news[n.id];
       if (!d) { return; }
-      var mode = cardMode(n, style);
+      // An Included card keeps the style it was showing, with its picks or
+      // wording, when the toggle changes; only Skipped cards follow the toggle.
+      // d.style is always the style on screen, so Skip then Include locks in
+      // what the person sees.
+      var cardStyle = (d.status === 'approved' && d.style) ? d.style : style;
+      d.style = cardStyle;
+      var mode = cardMode(n, cardStyle);
       d.text = newsText(n, d, mode);
 
       var coSel = mk('select'); coSel.style.cssText = 'margin-bottom:6px;font-size:12px';
@@ -1971,7 +1978,7 @@
           body.appendChild(row);
         });
         paintPrev();
-        if (style === 'ready') {
+        if (cardStyle === 'ready') {
           var fb1 = mk('p', { cls: 'note' }); fb1.textContent = 'No ready-made wording came back for this one, so it\u2019s shown as Tap to fill.';
           body.appendChild(fb1);
         }
@@ -2000,10 +2007,16 @@
         });
         body.appendChild(ta); body.appendChild(kwLine);
         paintKw();
-        if (style !== 'own') {
+        if (cardStyle !== 'own') {
           var fb2 = mk('p', { cls: 'note' }); fb2.textContent = 'No tap choices came back for this one, so edit the wording directly.';
           body.appendChild(fb2);
         }
+      }
+      if (mode !== cardMode(n, style)) {
+        var kept = mk('p', { cls: 'note' });
+        var keptName = SUGG_STYLES.filter(function(s) { return s[0] === mode; })[0][1];
+        kept.textContent = 'Included, so it stays in ' + keptName + '. To change it, tap Skip, then tap a style above.';
+        body.appendChild(kept);
       }
       rev.insertBefore(body, anchor);
       rev.appendChild(mkSegChoice('news', n.id, 'Include', 'Skip', d.status === 'approved'));

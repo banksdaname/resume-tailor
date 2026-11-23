@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.2
+
+- **Included additions keep their style.** Switching the Suggestion style now changes only the additions that are still on Skip. An addition you've included stays the way you made it: one filled in with Tap to fill keeps its picks when you switch to Ready-made, and one included as Ready-made stays Ready-made when you switch back. A short note on the card says which style it's keeping.
+- To change an included addition's style, tap Skip on it, then tap the style you want.
+
 ## 1.11.1
 
 - **Include now stays on.** If you tapped Include on a possible addition and then picked a choice for one of its blanks, the card flipped back to Skip, and the next pick flipped it on again. Only your own tap on Skip turns an addition off now. This also means an addition you've included keeps any blank you haven't filled, shown underlined in amber, so fill or remove it before building.
