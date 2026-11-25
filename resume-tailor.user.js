@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Résumé Tailor
 // @namespace    banksdaname
-// @version      1.12.3
+// @version      1.12.4
 // @updateURL    https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @downloadURL  https://raw.githubusercontent.com/banksdaname/resume-tailor/main/resume-tailor.user.js
 // @description  Tailor your résumé to any job posting. Styled PDF + ATS plain text, plus a matching cover letter.
@@ -21,7 +21,7 @@
 (function () {
   'use strict';
 
-  var SCRIPT_VERSION = '1.12.3';
+  var SCRIPT_VERSION = '1.12.4';
 
   /* ============ LinkedIn paste helper — runs only on linkedin.com/in/* pages
      opened by the "Grab from LinkedIn" button (identified by #rt_grab).
@@ -618,6 +618,55 @@
   var hdStick = ap(mk('div', { cls: 'rt-stick', id: 'rt-stick' }), hd, matchStrip);
   ap(root, hdStick, rtBody);
 
+  // Adds CSS to a shadow root (or the document). A constructed stylesheet
+  // is built through the CSS object model, which a page's style-src CSP
+  // doesn't govern, so it applies even where the page only allows <style>
+  // tags carrying its own nonce (MyGreenhouse). Older browsers get a
+  // <style> tag instead.
+  function adoptCss(target, css) {
+    try {
+      if (typeof CSSStyleSheet === 'function' && 'adoptedStyleSheets' in target) {
+        var sheet = new CSSStyleSheet();
+        sheet.replaceSync(css);
+        target.adoptedStyleSheets = target.adoptedStyleSheets.concat([sheet]);
+        return;
+      }
+    } catch (e) {}
+    var st = document.createElement('style');
+    st.textContent = css;
+    (target === document ? (document.head || document.documentElement) : target).appendChild(st);
+  }
+
+  // Keeps our clicks, focus, keys and scrolling to ourselves. Pop-ups such
+  // as a job description in a Radix dialog (MyGreenhouse) close or pull
+  // focus back when they see a press or focus outside themselves, via
+  // listeners on document. Our own handlers sit on or inside `el` and have
+  // already run when the event bubbles up to it, so stopping it there
+  // hides it from the page without changing anything for the panel.
+  var ISOLATED_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu',
+    'touchstart', 'touchend', 'touchmove', 'wheel', 'focusin', 'focusout', 'keydown', 'keyup', 'keypress'];
+  var isolatedEls = [];
+  function isolateEvents(el) {
+    isolatedEls.push(el);
+    ISOLATED_EVENTS.forEach(function(type) {
+      el.addEventListener(type, function(e) { e.stopPropagation(); });
+    });
+  }
+  function isOurs(node) {
+    for (var i = 0; i < isolatedEls.length; i++) {
+      if (node && (node === isolatedEls[i] || isolatedEls[i].contains(node))) { return true; }
+    }
+    return false;
+  }
+  // Focus moving from the page into the panel also fires focusout on the
+  // page element it leaves, and a dialog's focus trap answers that by
+  // pulling focus back. That event never passes through our elements, so
+  // it's caught here first: this capture listener is added before any
+  // dialog mounts and so runs ahead of the dialog's own.
+  window.addEventListener('focusout', function(e) {
+    if (isOurs(e.relatedTarget) && !isOurs(e.target)) { e.stopImmediatePropagation(); }
+  }, true);
+
   // Shadow DOM setup: create a host in the light DOM, attach an open shadow
   // root, and put both our CSS and our panel inside it. This isolates our
   // styles from the host page's CSS completely — no matter what rules
@@ -625,12 +674,15 @@
   // The host itself is intentionally sized 0x0 when closed; the panel's
   // own position:fixed inside the shadow handles its actual dimensions.
   var shadowHost = mk('div', { id: 'rt-shadow-host' });
+  // Critical host styles go inline: pages with a nonce-only style-src CSP
+  // (MyGreenhouse) can block the GM_addStyle sheet that also carries them.
+  shadowHost.style.cssText = 'position:fixed;top:0;right:0;z-index:2147483647;width:0;height:0;pointer-events:none';
   document.documentElement.appendChild(shadowHost);
   var shadow = shadowHost.attachShadow({ mode: 'open' });
-  var shadowStyle = document.createElement('style');
-  shadowStyle.textContent = PANEL_CSS;
-  shadow.appendChild(shadowStyle);
+  adoptCss(shadow, PANEL_CSS);
   shadow.appendChild(root);
+  isolateEvents(shadowHost);
+  isolateEvents(launch);
 
   function rt$(id) { return root.querySelector('#' + id); }
   var sel = rt$('rt-model');
@@ -782,8 +834,8 @@
   // back on close. Uses inline display, kept separate from the opacity/X
   // state that setSolid manages, so the two never fight — and so it survives
   // stylesheet wipes like the rest of the launcher's styling.
-  function openPanel() { reattach(); setSolid(true); launch.style.display = 'none'; root.classList.add('open'); shadowHost.classList.add('open'); try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } checkForUpdate(); }
-  function closePanel() { root.classList.remove('open'); shadowHost.classList.remove('open'); launch.style.display = 'flex'; setSolid(true); }
+  function openPanel() { reattach(); setSolid(true); launch.style.display = 'none'; root.classList.add('open'); shadowHost.classList.add('open'); shadowHost.style.width = 'auto'; shadowHost.style.height = 'auto'; shadowHost.style.pointerEvents = 'auto'; try { hydrate(); } catch(e) { console.error('[Résumé Tailor]', e); } checkForUpdate(); }
+  function closePanel() { root.classList.remove('open'); shadowHost.classList.remove('open'); shadowHost.style.width = '0'; shadowHost.style.height = '0'; shadowHost.style.pointerEvents = 'none'; launch.style.display = 'flex'; setSolid(true); }
   function showPill() { reattach(); launch.classList.remove('rt-off'); GM_setValue('rt_pillHidden', false); }
 
   // Position the dot via left/top (not right/bottom) so drag math is a

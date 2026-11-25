@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.4
+
+- **The panel works on MyGreenhouse.** On my.greenhouse.io the panel sometimes showed up unstyled at the left edge, with no background and nothing to scroll or click through. Its styling now loads in a way strict sites can't block, so it opens on the right like everywhere else.
+- **Keep a job description open while you use the panel.** Clicking RT, or anything in the panel, no longer closes a job description shown in a pop-up (as on MyGreenhouse). **Grab** picks up the open job's text, and you can type, scroll and click in the panel while the job stays on screen.
+
 ## 1.12.3
 
 - **Drawn signatures now really smooth out.** The smoothing added in 1.12.2 worked on a mouse's closely spaced points, so it changed almost nothing you could see. Each stroke is now re-spaced evenly and smoothed over a wider stretch when you lift the mouse or pen, which takes out hand shake and pixel steps while keeping loops their size. Signatures saved earlier are unchanged; tap Clear and redraw.
